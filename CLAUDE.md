@@ -13,7 +13,7 @@ Cada tarea llega como un **handoff** con: contexto y stack, criterios de aceptac
 - Si la tarea exige una decisión de arquitectura sin ADR que la respalde, **detente y devuélvela** para decidirla en el chat de arquitectura.
 - No cambies versiones de .NET, SDK ni paquetes sin que el handoff lo pida.
 - Antes de decir "terminado", corre `dotnet build` y `dotnet test` y reporta el resultado y los archivos cambiados.
-- Commits pequeños con Conventional Commits (`feat:`, `fix:`, `test:`, `chore:`, `docs:`).
+- Commits pequeños con Conventional Commits (feat:, fix:, test:, chore:, docs:). El mensaje de commit y el título de los PR van en inglés.
 
 ## Stack
 
