@@ -22,6 +22,7 @@ GoalFlow lo construye y opera una sola persona y se despliega como un único pro
    - Domain: ninguna (ni EF Core, ni ASP.NET, ni `Microsoft.Extensions.*`).
    - Application: solo Domain y `Microsoft.Extensions.*.Abstractions` (por ejemplo `ILogger`).
 6. **Comunicación entre módulos por eventos.** El módulo emisor (por ejemplo Torneos con `PartidoGuardado`) publica el evento a un puerto, no conoce a los consumidores. El evento lleva identificadores (`TenantId`, `PartidoId`, versión) y no datos del partido: el consumidor relee el estado actual, así una corrección o un reintento no procesa datos viejos. Un módulo solo puede depender de otro a través de su sub-namespace `.Contracts` (eventos, DTO de lectura), nunca de sus entidades.
+Excepción: Tenancy es el núcleo compartido (Shared Kernel) y puede usarse completo; solo contiene el identificador y el contexto de tenant y no debe crecer más (se revisa en S2D3).
 7. **Grafo de módulos permitido (cada fila nueva exige actualizar este ADR):**
 
    | Módulo | Puede depender de |
@@ -31,6 +32,7 @@ GoalFlow lo construye y opera una sola persona y se despliega como un único pro
    | Estadisticas | Tenancy, Torneos.Contracts |
    | Pollas | Tenancy, Torneos.Contracts, Estadisticas.Contracts |
    | IA | Tenancy, Torneos.Contracts, Estadisticas.Contracts |
+   Una entrada "X.Contracts" permite solo ese sub-namespace; una entrada "X" (solo Tenancy) permite el módulo completo.
 
 8. **Contexto de tenant.** La abstracción del tenant actual es un puerto en Application. El `TenantId` es dato del mensaje o comando y nunca estado ambiental del hilo: cada trabajo en background crea su propio scope de DI y fija el tenant desde el mensaje (el pipeline no tiene `HttpContext`).
 9. **Un solo proceso con memoria acotada.** Toda cola en memoria es acotada (`Channel` con capacidad máxima y política de espera) y toda caché en memoria tiene `SizeLimit`. El proveedor de LLM es remoto: no consume memoria del modelo, pero sí buffers de las respuestas.
