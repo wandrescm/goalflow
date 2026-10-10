@@ -24,13 +24,16 @@ Cada tarea llega como un **handoff** con: contexto y stack, criterios de aceptac
 
 ## Arquitectura: monolito modular, Clean/Hexagonal
 
-Estructura objetivo (hoy existen `GoalFlow.Api` y `GoalFlow.Tests`; el resto se crea en la sesión de arquitectura base):
+Estructura (ADR-03, en `docs/adr/`):
 
 - `GoalFlow.Domain`: entidades, reglas y eventos. **No depende de nada** (ni EF Core ni ASP.NET).
 - `GoalFlow.Application`: casos de uso y puertos (interfaces). Depende solo de Domain.
 - `GoalFlow.Infrastructure`: adaptadores (EF Core, caché, proveedores externos). Implementa los puertos.
 - `GoalFlow.Api`: controladores finos y raíz de composición (DI). Sin lógica de negocio.
-- `GoalFlow.Tests`: unitarias, de integración y **pruebas de arquitectura** que verifican estas dependencias.
+- `GoalFlow.Tests`: unitarias, de integración y **pruebas de arquitectura** (`GoalFlow.Tests/Architecture`) que verifican estas dependencias.
+- Los módulos (Tenancy, Torneos, Estadisticas, Pollas, IA) son namespaces `GoalFlow.<Capa>.<Modulo>` dentro de cada capa, no proyectos. Un módulo depende de otro solo por su sub-namespace `.Contracts`; Tenancy es el núcleo compartido y puede usarse completo.
+- Los módulos se comunican por eventos con identificadores y versión, no con datos del partido. Los trabajos en background reciben el `TenantId` en el mensaje.
+- Las reglas de arquitectura no se debilitan ni se borran para que pase un test. Una dependencia nueva entre módulos exige actualizar `TablaDeModulos.cs` y el ADR-03 §7 en el mismo commit.
 
 ## Reglas de dominio no negociables
 
