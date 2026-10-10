@@ -14,7 +14,7 @@ Se inicia un proyecto nuevo con salida a producción prevista dentro de pocas se
 2. El SDK se fija en `global.json` con la versión `10.0.401`. La política `rollForward` pasa de `latestFeature` a **`latestPatch`**: con `latestFeature`, una máquina con una banda de SDK más nueva compila con un SDK distinto al de CI y los resultados pueden divergir. Actualizar de banda de SDK es un cambio explícito y revisado.
 3. **Compatibilidad del stack con .NET 10, verificada hasta hoy:**
    - Npgsql EF Core provider: existen versiones 10.0.x, que dependen de EF Core 10.
-   - NetArchTest.Rules (pruebas de arquitectura): es una biblioteca .NET Standard; se confirma ejecutándola en S2D1.
+   - NetArchTest.Rules 1.3.2 verificado en S2D1 (compila y corre en net10.0). actions/checkout@v7 y actions/setup-dotnet@v6 verificados por la primera ejecución de CI.
    - **Pendiente de verificar en la sesión que las introduce:** Polly (S2D5), JwtBearer (S2D3) e imagen base de Docker (S2D2).
 4. Una dependencia no se agrega al proyecto sin comprobar su compatibilidad con .NET 10 y registrarla en el ADR de la sesión correspondiente.
 
