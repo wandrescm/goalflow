@@ -1,34 +1,36 @@
-# ADR-07: Runtime .NET 10 (LTS)
+# ADR-07: .NET 10 (LTS) runtime
 
-- **Estado:** Aceptado
-- **Fecha:** 2026-10-08 (S2D1)
-- **Relacionados:** ADR-03
+- **Status:** Accepted
+- **Date:** 2026-10-08 (S2D1)
+- **Related:** ADR-03
 
-## Contexto
+Translated from Spanish on 2026-10-11; the decision is unchanged.
 
-Se inicia un proyecto nuevo con salida a producción prevista dentro de pocas semanas. Microsoft anunció que .NET 8 (LTS) y .NET 9 (STS) terminan su soporte el 10 de noviembre de 2026. .NET 10 es LTS y tiene soporte hasta noviembre de 2028 (la página de política de soporte indica el 14 de noviembre de 2028). Datos verificados el 2026-10-08 en la página oficial de política de soporte de .NET y en el blog de .NET; confirmar de nuevo antes de citarlos en un documento externo.
+## Context
 
-## Decisión
+A new project is starting, with a production release planned within a few weeks. Microsoft announced that .NET 8 (LTS) and .NET 9 (STS) end support on 10 November 2026. .NET 10 is LTS and is supported until November 2028 (the support policy page gives 14 November 2028). Data verified on 2026-10-08 on the official .NET support policy page and on the .NET blog; confirm again before citing them in an external document.
 
-1. El runtime y el SDK son **.NET 10 (LTS)**; todos los proyectos usan `net10.0`.
-2. El SDK se fija en `global.json` con la versión `10.0.401`. La política `rollForward` pasa de `latestFeature` a **`latestPatch`**: con `latestFeature`, una máquina con una banda de SDK más nueva compila con un SDK distinto al de CI y los resultados pueden divergir. Actualizar de banda de SDK es un cambio explícito y revisado.
-3. **Compatibilidad del stack con .NET 10, verificada hasta hoy:**
-   - Npgsql EF Core provider: existen versiones 10.0.x, que dependen de EF Core 10.
-   - NetArchTest.Rules 1.3.2 verificado en S2D1 (compila y corre en net10.0). actions/checkout@v7 y actions/setup-dotnet@v6 verificados por la primera ejecución de CI.
-   - **Pendiente de verificar en la sesión que las introduce:** Polly (S2D5), JwtBearer (S2D3) e imagen base de Docker (S2D2).
-4. Una dependencia no se agrega al proyecto sin comprobar su compatibilidad con .NET 10 y registrarla en el ADR de la sesión correspondiente.
+## Decision
 
-## Alternativas descartadas
+1. The runtime and the SDK are **.NET 10 (LTS)**; all projects use `net10.0`.
+2. The SDK is pinned in `global.json` to version `10.0.401`. The `rollForward` policy changes from `latestFeature` to **`latestPatch`**: with `latestFeature`, a machine with a newer SDK band builds with a different SDK than CI and the results may diverge. Moving to a new SDK band is an explicit, reviewed change.
+3. **Stack compatibility with .NET 10, verified so far:**
+   - Npgsql EF Core provider: versions 10.0.x exist, and they depend on EF Core 10.
+   - NetArchTest.Rules 1.3.2 verified in S2D1 (it builds and runs on net10.0). actions/checkout@v7 and actions/setup-dotnet@v6 verified by the first CI run.
+   - **Pending verification in the session that introduces each one:** Polly (S2D5), JwtBearer (S2D3) and the Docker base image (S2D2).
+4. A dependency is not added to the project without checking its compatibility with .NET 10 and recording it in the ADR of the corresponding session.
 
-- **.NET 8 o .NET 9:** perderían soporte semanas después del lanzamiento y generarían deuda de actualización desde el primer día.
-- **Esperar a la siguiente versión:** no hay beneficio; .NET 10 tiene la ventana de soporte más larga disponible.
+## Rejected alternatives
 
-## Consecuencias
+- **.NET 8 or .NET 9:** they would lose support weeks after launch and create upgrade debt from day one.
+- **Waiting for the next version:** no benefit; .NET 10 has the longest support window available.
 
-- **(+)** Ventana de soporte hasta 2028 sin migración obligatoria durante la vida útil prevista de la v1.
-- **(−)** Algunas bibliotecas de terceros pueden tardar en soportar .NET 10; mitigación: comprobar cada dependencia antes de incorporarla.
-- **(−)** El SDK se actualiza solo por decisión explícita (cambio en `global.json`), no automáticamente.
+## Consequences
 
-## Verificación
+- **(+)** A support window until 2028 with no mandatory migration during the planned lifetime of v1.
+- **(−)** Some third-party libraries may be slow to support .NET 10; mitigation: check each dependency before adding it.
+- **(−)** The SDK is updated only by explicit decision (a change in `global.json`), not automatically.
 
-`dotnet --list-sdks` muestra la versión fijada, `dotnet build` y `dotnet test` pasan en local y en CI, y CI usa el SDK declarado en `global.json`. Reevaluar la versión antes de noviembre de 2028.
+## Verification
+
+`dotnet --list-sdks` shows the pinned version, `dotnet build` and `dotnet test` pass locally and in CI, and CI uses the SDK declared in `global.json`. Re-evaluate the version before November 2028.
