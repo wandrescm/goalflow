@@ -13,6 +13,8 @@ Cada tarea llega como un **handoff** con: contexto y stack, criterios de aceptac
 - Si la tarea exige una decisión de arquitectura sin ADR que la respalde, **detente y devuélvela** para decidirla en el chat de arquitectura.
 - No cambies versiones de .NET, SDK ni paquetes sin que el handoff lo pida.
 - Antes de decir "terminado", corre `dotnet build` y `dotnet test` y reporta el resultado y los archivos cambiados.
+- **Spec primero:** las Specs viven en `docs/specs/` (plantilla en `docs/specs/TEMPLATE.md`) y los ADR en `docs/adr/`. Cualquier cambio de comportamiento actualiza primero la Spec o el ADR correspondiente, en el mismo PR que el código.
+- Cada PR incluye en su descripción la tabla de validación (requisito → test → resultado) con resultados reales.
 - Commits pequeños con Conventional Commits (feat:, fix:, test:, chore:, docs:). El mensaje de commit y el título de los PR van en inglés.
 
 ## Stack
