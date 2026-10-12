@@ -16,6 +16,7 @@ Cada tarea llega como un **handoff** con: contexto y stack, criterios de aceptac
 - **Spec primero:** las Specs viven en `docs/specs/` (plantilla en `docs/specs/TEMPLATE.md`) y los ADR en `docs/adr/`. Cualquier cambio de comportamiento actualiza primero la Spec o el ADR correspondiente, en el mismo PR que el código.
 - Cada PR incluye en su descripción la tabla de validación (requisito → test → resultado) con resultados reales.
 - Commits pequeños con Conventional Commits (feat:, fix:, test:, chore:, docs:). El mensaje de commit y el título de los PR van en inglés.
+- Las Specs y los ADR se escriben en inglés.
 
 ## Stack
 

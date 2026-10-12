@@ -37,6 +37,16 @@ Decisions and their trade-offs are in [`docs/adr/`](docs/adr/).
 
 AI wrote a large share of the code; the specifications, the decisions and the review are mine. Specs written before implementation are archived afterwards and labeled as such.
 
+## Domain glossary
+
+| Term | Meaning |
+| --- | --- |
+| Tenancy | Tenant (league) isolation shared kernel. |
+| Torneos | Tournaments, fixtures and results. |
+| Estadisticas | Standings, top scorers and clean-sheet records derived from saved matches. |
+| Pollas | Free prediction games for fans. |
+| IA | AI features (match summaries, rulebook assistant). |
+
 ## Run locally
 
 Requires the .NET SDK version in `global.json`.
