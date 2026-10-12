@@ -24,7 +24,7 @@ GoalFlow is built and operated by a single person and deployed as a single proce
    - Domain: none (no EF Core, no ASP.NET, no `Microsoft.Extensions.*`).
    - Application: only Domain and `Microsoft.Extensions.*.Abstractions` (for example `ILogger`).
 6. **Communication between modules by events.** The emitting module (for example Torneos with `PartidoGuardado`) publishes the event to a port and does not know its consumers. The event carries identifiers (`TenantId`, `PartidoId`, version) and not match data: the consumer re-reads the current state, so a correction or a retry never processes stale data. A module may depend on another only through its `.Contracts` sub-namespace (events, read DTOs), never on its entities.
-Exception: Tenancy is the shared kernel (Shared Kernel) and may be used whole; it contains only the tenant identifier and context and must not grow any further (to be reviewed in S2D3).
+Exception: Tenancy is the shared kernel and may be used whole; it contains only the tenant identifier and context and must not grow any further (to be reviewed in S2D3).
 7. **Allowed module graph (each new row requires updating this ADR):**
 
    | Module | May depend on |
@@ -34,6 +34,7 @@ Exception: Tenancy is the shared kernel (Shared Kernel) and may be used whole; i
    | Estadisticas | Tenancy, Torneos.Contracts |
    | Pollas | Tenancy, Torneos.Contracts, Estadisticas.Contracts |
    | IA | Tenancy, Torneos.Contracts, Estadisticas.Contracts |
+
    An entry "X.Contracts" allows only that sub-namespace; an entry "X" (only Tenancy) allows the whole module.
 
 8. **Tenant context.** The abstraction for the current tenant is a port in Application. The `TenantId` is data of the message or command and never ambient thread state: each background job creates its own DI scope and sets the tenant from the message (the pipeline has no `HttpContext`).
