@@ -6,9 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\GoalFlow.Application\GoalFlow.Application.csproj" />
     <ProjectReference Include="..\GoalFlow.Infrastructure\GoalFlow.Infrastructure.csproj" />
   </ItemGroup>
