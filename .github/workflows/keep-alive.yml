@@ -1,0 +1,37 @@
+name: keep-alive
+
+# Keeps the free Supabase project from pausing for inactivity (ADR-05 2.8).
+# Database only: it does not call the API.
+
+on:
+  schedule:
+    - cron: "17 11 */3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Ping database
+        env:
+          KEEPALIVE_DATABASE_URL: ${{ secrets.KEEPALIVE_DATABASE_URL }}
+        run: |
+          if [ -z "$KEEPALIVE_DATABASE_URL" ]; then
+            echo "::error::Secret KEEPALIVE_DATABASE_URL is not configured."
+            exit 1
+          fi
+          case "$KEEPALIVE_DATABASE_URL" in
+            *sslmode=require*) ;;
+            *)
+              echo "::error::KEEPALIVE_DATABASE_URL must contain sslmode=require."
+              exit 1
+              ;;
+          esac
+          if ! command -v psql > /dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql "$KEEPALIVE_DATABASE_URL" -c "select 1" > /dev/null
