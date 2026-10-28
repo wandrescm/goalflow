@@ -23,7 +23,7 @@ Cada tarea llega como un **handoff** con: contexto y stack, criterios de aceptac
 - C# y **.NET 10 (LTS)**, ASP.NET Core Web API, EF Core con Npgsql, xUnit.
 - Frontend (más adelante): Vue.js con Composition API, TypeScript, Vite y Pinia; pruebas con Vitest.
 - Base de datos: PostgreSQL en Supabase. Autenticación: Supabase Auth (JWT).
-- Hosting: Render (backend) y Cloudflare Pages (frontend). CI/CD con GitHub Actions.
+- Hosting: Render (backend) y Cloudflare Workers con Static Assets (frontend). CI/CD con GitHub Actions.
 
 ## Arquitectura: monolito modular, Clean/Hexagonal
 
@@ -47,6 +47,7 @@ Estructura (ADR-03, en `docs/adr/`):
 - **Jugadores:** solo mayores de 18; el documento de identidad se cifra por columna y nunca se expone en respuestas públicas ni en logs.
 - **Magic link del Capitán:** token aleatorio criptográfico de al menos 256 bits, se guarda solo su hash, con caducidad y un solo uso; una edición posterior responde 403.
 - **Dinero:** la plataforma no cobra ni paga nada; los premios en dinero están detrás de una bandera apagada.
+- **Base de datos:** la API se conecta como `goalflow_app` por el pooler de Supabase en modo sesión, nunca como `postgres`. Las tablas viven en el schema `goalflow`. La Data API de Supabase está desactivada (ADR-05).
 
 ## Estándar de código
 
