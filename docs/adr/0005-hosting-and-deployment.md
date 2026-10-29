@@ -49,7 +49,7 @@ The database is the last line of defence if the API has a bug (for example a mis
 | Role | Used by | Privileges |
 |---|---|---|
 | `postgres` (built-in) | Owner only: SQL editor, migrations from CI or local | Admin. Never used by the running API. |
-| `goalflow_app` | The API on Render; the keep-alive workflow | `LOGIN`, `NOBYPASSRLS`. `USAGE` on schema `goalflow`; `SELECT, INSERT, UPDATE, DELETE` on its tables; `USAGE, SELECT` on its sequences. No DDL, no `CREATE`, no access to other schemas. |
+| `goalflow_app` | The API on Render; the keep-alive workflow | `LOGIN`, `NOBYPASSRLS`. `USAGE` on schema `goalflow`; `SELECT, INSERT, UPDATE, DELETE` on its tables; `USAGE, SELECT` on its sequences. No DDL, no `CREATE`, no privileges beyond those PostgreSQL grants to `PUBLIC` by default. |
 | `goalflow_backup` | The backup workflow | `LOGIN`, **`BYPASSRLS`**, `default_transaction_read_only = on`. `USAGE` on schema `goalflow` and `SELECT` on its tables and sequences; nothing else. |
 
 - The API's username in the connection string is **`goalflow_app.<project-ref>`**.
@@ -57,6 +57,7 @@ The database is the last line of defence if the API has a bug (for example a mis
 - **The Supabase Data API is disabled.** GoalFlow reads and writes data only through its own API; no client talks to PostgREST.
 - Supabase's `service_role` key is not used. Note: it is a key for Supabase's HTTP APIs, not a Postgres login, so "not using it" says nothing about the privileges of the Npgsql connection; those come from the role above.
 - Roles are created with SQL run as `postgres`, by a versioned script in the repository that contains no passwords. Passwords are set by the owner outside the repository and stored only in the password manager, Render and GitHub secrets.
+- The role script grants future privileges with `alter default privileges for role postgres`, so they apply only to objects **created by `postgres`**. Tables created by any other role would get no grants for `goalflow_app` or `goalflow_backup`. Migrations therefore run as `postgres` unless C-02 decides otherwise and updates the script in the same change.
 - **Why the backup role bypasses RLS while the API role does not.** A backup must contain every row of every tenant; a role subject to RLS would make `pg_dump` fail (or, with `--enable-row-security`, export a silently incomplete copy). The API, in contrast, must never see more than its tenant allows. The two roles have opposite needs, so they get opposite attributes. The backup role's real limit is its grants (`SELECT` only); `default_transaction_read_only` is a safety default a session can turn off, not a security boundary.
 - **Tenant isolation is not decided here.** This ADR only guarantees that the API runs with limited privileges. Whether isolation is enforced by EF Core's global filter alone or also by row-level security per tenant is decided in the multi-tenancy ADR.
 
@@ -75,6 +76,7 @@ There are three hops, each with its own rule:
 - By default the middleware only trusts loopback proxies, and Render's proxy is not on loopback, so the defaults would silently ignore the headers. Render's proxy addresses are not fixed, so the known-proxy and known-network lists are **cleared** in production.
 - Clearing them is acceptable only because the container is reachable **exclusively** through Render's proxy.
 - `ForwardLimit` stays at **1**: only the last entry, added by the proxy, is used. A value a client injects in its own `X-Forwarded-For` lands earlier in the list and is ignored.
+- Observed after the first deployment: responses carry `Server: cloudflare` and a `CF-RAY` header, so a Cloudflare edge sits in front of Render's proxy (client → Cloudflare → Render proxy → container). Whether the last `X-Forwarded-For` entry is the real client IP or a Cloudflare address is not proven by the automated tests; it is verified on Render when the rate limiter exists (C-07). If it turns out to be a Cloudflare address, this section is revised before the rate limiter ships.
 - No TLS certificate or private key is stored in the image or the repository.
 - Every database connection (API, keep-alive, backup) requires TLS. A connection that cannot negotiate TLS fails instead of falling back to plain text.
 
@@ -180,14 +182,14 @@ There are three hops, each with its own rule:
 
 ## 7. Clarifications
 
-- **C-01** *Does `pg_dump` need a specific client version?* Yes: the client's major version must be equal to or newer than the server's. The server version is read from the Supabase dashboard when the backup workflow is built, and the workflow installs a matching client.
+- **C-01** *Does `pg_dump` need a specific client version?* Yes: the client's major version must be equal to or newer than the server's. The server reported **PostgreSQL 17.11** on 2026-10-29, so the backup workflow installs a `pg_dump` 17 client (a 15 client cannot dump a 17 server).
 - **C-02** *When and how are EF Core migrations applied, and with which role?* Migrations need DDL, so they never run as `goalflow_app`. The mechanism (CI step or manual) is decided when the first migration exists (multi-tenancy work).
 - **C-03** *What is the Supavisor Pool Size on the project?* Read from the Supabase dashboard during the first deployment; `Maximum Pool Size` must stay below it.
 - **C-04** *Which frontend origin does CORS allow?* The production origin defined in ADR-09, plus the local development origin in the `Development` environment only.
 - **C-05** *Npgsql TLS mode: encrypt only (`Require`) or encrypt and verify the server certificate (`VerifyFull`)?* Decided during the first deployment after checking current Npgsql behaviour and whether Supabase provides the CA certificate. `VerifyFull` is preferred if available; never weaker than `Require`.
 - **C-06** *Does the keep-alive keep Render awake?* No. It touches only the database (§2.8).
 - **C-07** *Does the container need HTTPS, and how is the forwarded-header setup verified?* No HTTPS in the container: Render terminates TLS. Verification happens at two levels, and neither replaces the other. Automated tests prove **our configuration**: with a fixed simulated proxy address, the last `X-Forwarded-For` entry wins, and a mutation (`ForwardLimit = 2`) must turn the spoofing test red. They cannot prove **Render's behaviour** (that its proxy appends the real client IP as the last entry). That is checked after deployment: send a request with a fake `X-Forwarded-For` value and confirm the API logs the real client IP, not the fake one. Whether the configuration is done in code or through the ASP.NET Core environment switch for forwarded headers is decided in the implementation; code is preferred because it is visible and testable.
-- **C-08** *What if `goalflow_app` cannot authenticate through the shared pooler?* The deployment stops and the problem is diagnosed. Falling back to `postgres` is not automatic: it requires an explicit, dated decision by the owner recorded in this ADR.
+- **C-08** *What if `goalflow_app` cannot authenticate through the shared pooler?* The deployment stops and the problem is diagnosed. Falling back to `postgres` is not automatic: it requires an explicit, dated decision by the owner recorded in this ADR. **Resolved on 2026-10-29:** `goalflow_app` authenticated through the shared pooler (session mode) both from a local `psql` and from the keep-alive workflow on GitHub Actions; no fallback was needed.
 - **C-09** *Does disabling the Data API affect Supabase Auth?* Auth is a separate service; this is verified when Admin login is implemented (multi-tenancy and auth work).
 - **C-10** *Are Supabase Auth users (schema `auth`) covered by the backup?* No: the dump covers schema `goalflow` only. Losing the project would lose user accounts and the link between users and their data (for example prediction-game entries). The backup strategy for identities is decided before fan login is implemented.
 - **C-11** *Is there a conflict between least privilege and backups once RLS exists?* Yes, and it is resolved by giving `goalflow_backup` `BYPASSRLS` while keeping it read-only by grants (§2.3). The conflict is latent today (no RLS on `goalflow` tables yet) but is fixed now so that enabling RLS in the multi-tenancy work cannot silently break backups. If Supabase ever refuses `BYPASSRLS` for a custom role, the fallback is decided then; `--enable-row-security` is not an acceptable fallback.
@@ -201,10 +203,28 @@ There are three hops, each with its own rule:
 - Verify R-21 with a negative test: `goalflow_backup` attempting `INSERT` must fail.
 - Canary for R-19/R-20 (once any table has RLS enabled): temporarily remove `BYPASSRLS` from `goalflow_backup` on a test run and confirm the backup workflow fails; restore the attribute afterwards.
 
-## 9. Measurements (filled in after the first deployment)
+## 9. Measurements (first deployment)
 
 | Metric | Prediction (owner) | Measured | Date |
 |---|---|---|---|
-| API memory at idle after startup | 120 MB | _pending_ | |
-| API memory after first requests | _pending_ | _pending_ | |
-| Cold start time on free instance | _pending_ | _pending_ | |
+| API memory at idle after startup | 120 MB | 18.6 MiB (local Docker, `-m 512m`) | 2026-10-29 |
+| API memory after first requests | — | 25.7 MiB after 5 `GET /health` (local Docker, `-m 512m`) | 2026-10-29 |
+| Cold start time on free instance | 60 s | ≈ 13.3 s (n = 1) after > 15 min idle; warm request 0.17 s | 2026-10-29 |
+
+Notes:
+- Render's free instance does not expose memory metrics, so memory was measured locally with the same 512 MB container limit, which also gives .NET the same GC heap limit. Re-measure on Render after moving to the always-on instance, whose dashboard shows memory.
+- These numbers describe an API with no database access, no EF Core and a single endpoint. They are a baseline, not capacity planning: re-measure memory and cold start once the API connects to the database.
+- Cold start is a single sample, timed from the client with `Measure-Command` around `curl`; it includes Render waking the instance.
+
+## 10. Verification after the first deployment (2026-10-29)
+
+| Requirement | Verification | Result |
+|---|---|---|
+| R-03 | Local container with `PORT=9000` and without `PORT` (port 8080) | `GET /health` → 200 in both |
+| R-04 | `GET https://<service>.onrender.com/health` | 200, empty body, served by Kestrel |
+| R-05 | Merge commit `e8a75ec`: CI `deploy` job green; Render deployed `e8a75ec` via Deploy Hook | Same SHA, deploy Live |
+| R-07, R-13 | `keep-alive` run #1 via `workflow_dispatch` | Success; `psql` reported a TLSv1.3 connection to the pooler |
+| R-16 | As `goalflow_app`: `create table goalflow.t` and `create table public.t` | Both `permission denied for schema` |
+| R-18 | `GET /rest/v1/partidos` with the publishable key: Data API off → on (canary) → off | 503 `PGRST002` → 404 `PGRST205` → 503 `PGRST002` |
+| R-15 (Render) | Pending: needs request logging or the rate limiter | Pending |
+| R-21 | `goalflow_backup` attempting `INSERT` | Pending: verified when the backup workflow is built |
