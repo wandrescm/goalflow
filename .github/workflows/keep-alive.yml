@@ -23,13 +23,10 @@ jobs:
             echo "::error::Secret KEEPALIVE_DATABASE_URL is not configured."
             exit 1
           fi
-          case "$KEEPALIVE_DATABASE_URL" in
-            *sslmode=require*) ;;
-            *)
-              echo "::error::KEEPALIVE_DATABASE_URL must contain sslmode=require."
-              exit 1
-              ;;
-          esac
+          if ! printf '%s' "$KEEPALIVE_DATABASE_URL" | grep -Eq '[?&]sslmode=(require|verify-ca|verify-full)(&|$)'; then
+            echo "::error::KEEPALIVE_DATABASE_URL must contain sslmode=require, verify-ca or verify-full."
+            exit 1
+          fi
           if ! command -v psql > /dev/null; then
             sudo apt-get update -qq
             sudo apt-get install -y -qq postgresql-client
