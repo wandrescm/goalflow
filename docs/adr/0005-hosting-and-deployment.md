@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-28
-- **Related:** ADR-03 (modular monolith), ADR-07 (.NET 10 LTS), ADR-09 (frontend hosting), ADR-02 (post-save pipeline, pending), multi-tenancy ADR (pending)
+- **Related:** ADR-03 (modular monolith), ADR-07 (.NET 10 LTS), ADR-09 (frontend hosting), ADR-02 (post-save pipeline, pending), ADR-14 (multi-tenancy)
 
 ## 1. Context
 
@@ -183,7 +183,7 @@ There are three hops, each with its own rule:
 ## 7. Clarifications
 
 - **C-01** *Does `pg_dump` need a specific client version?* Yes: the client's major version must be equal to or newer than the server's. The server reported **PostgreSQL 17.11** on 2026-10-29, so the backup workflow installs a `pg_dump` 17 client (a 15 client cannot dump a 17 server).
-- **C-02** *When and how are EF Core migrations applied, and with which role?* Migrations need DDL, so they never run as `goalflow_app`. The mechanism (CI step or manual) is decided when the first migration exists (multi-tenancy work).
+- **C-02** *When and how are EF Core migrations applied, and with which role?* Migrations need DDL, so they never run as `goalflow_app`. The mechanism (CI step or manual) is decided when the first migration exists (multi-tenancy work). **Resolved on 2026-10-30 (ADR-14 §2.10):** CI generates an idempotent SQL script and publishes it as an artifact; the owner reviews it and applies it as `postgres` in the Supabase SQL editor. CI never connects to the production database with `postgres`.
 - **C-03** *What is the Supavisor Pool Size on the project?* Read from the Supabase dashboard during the first deployment; `Maximum Pool Size` must stay below it.
 - **C-04** *Which frontend origin does CORS allow?* The production origin defined in ADR-09, plus the local development origin in the `Development` environment only.
 - **C-05** *Npgsql TLS mode: encrypt only (`Require`) or encrypt and verify the server certificate (`VerifyFull`)?* Decided during the first deployment after checking current Npgsql behaviour and whether Supabase provides the CA certificate. `VerifyFull` is preferred if available; never weaker than `Require`.
