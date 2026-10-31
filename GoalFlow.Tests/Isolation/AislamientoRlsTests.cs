@@ -13,8 +13,10 @@ namespace GoalFlow.Tests.Isolation;
 [Collection(ColeccionDeAislamiento.Nombre)]
 public class AislamientoRlsTests(BaseDeAislamiento db)
 {
-    private const string PermisoDenegado = "42501";
-    private const string ViolaRls = "42501";
+    // El permiso denegado y el rechazo por RLS comparten SQLSTATE; solo el mensaje los distingue (Spec 002 T-11, T-13).
+    private const string SqlStateAccesoRechazado = "42501";
+    private const string PrefijoPermisoDenegado = "permission denied for table";
+    private const string TextoViolaRls = "row-level security policy";
 
     private static async Task<NpgsqlConnection> Abrir(string cadena)
     {
@@ -46,9 +48,11 @@ public class AislamientoRlsTests(BaseDeAislamiento db)
         return (int)(await comando.ExecuteScalarAsync())!;
     }
 
+    /// <summary>La transacción nunca se confirma: si la sentencia pasa, no altera la base compartida.</summary>
     private static async Task<PostgresException> Rechazado(NpgsqlConnection conexion, string sql)
     {
-        await using var comando = new NpgsqlCommand(sql, conexion);
+        await using var transaccion = await conexion.BeginTransactionAsync();
+        await using var comando = new NpgsqlCommand(sql, conexion, transaccion);
         return await Assert.ThrowsAsync<PostgresException>(() => comando.ExecuteNonQueryAsync());
     }
 
@@ -88,7 +92,8 @@ public class AislamientoRlsTests(BaseDeAislamiento db)
             conexion, transaccion);
         var error = await Assert.ThrowsAsync<PostgresException>(() => comando.ExecuteNonQueryAsync());
 
-        Assert.Equal(ViolaRls, error.SqlState);
+        Assert.Equal(SqlStateAccesoRechazado, error.SqlState);
+        Assert.Contains(TextoViolaRls, error.MessageText);
     }
 
     /// <summary>Pasa por el interceptor real sobre una conexión ajena, para que is_local = false lo delate.</summary>
@@ -155,7 +160,8 @@ public class AislamientoRlsTests(BaseDeAislamiento db)
 
         var error = await Rechazado(conexion, sql);
 
-        Assert.Equal(PermisoDenegado, error.SqlState);
+        Assert.Equal(SqlStateAccesoRechazado, error.SqlState);
+        Assert.StartsWith(PrefijoPermisoDenegado, error.MessageText);
     }
 
     [Fact]
