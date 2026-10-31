@@ -27,6 +27,21 @@ jobs:
       - name: Test
         run: dotnet test --no-build
 
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      # The owner reviews this script and applies it as postgres; CI never connects to production (ADR-14 2.10).
+      - name: Generate idempotent migration script
+        run: dotnet ef migrations script --idempotent --no-build --project GoalFlow.Infrastructure --startup-project GoalFlow.Infrastructure --output artifacts/migrations.sql
+
+      - name: Upload migration script
+        uses: actions/upload-artifact@v7
+        with:
+          name: migrations-sql
+          path: artifacts/migrations.sql
+          retention-days: 14
+          if-no-files-found: error
+
   docker-build:
     runs-on: ubuntu-24.04
     steps:
