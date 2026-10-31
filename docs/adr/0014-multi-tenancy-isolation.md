@@ -26,6 +26,7 @@ Facts that shape the decision:
 
 - **Shared database, shared schema** (`goalflow`). Every tenant-scoped table has `tenant_id uuid not null`.
 - **A tenant is a league** (one to one). The tenant identifier is the league identifier.
+- Every `tenant_id` column has a foreign key to `ligas(id)` with `ON DELETE RESTRICT`: a league that still has rows cannot be deleted, and `CASCADE` is never used for tenant keys. Referential-integrity checks are not subject to RLS and need no extra privilege for `goalflow_app`. They are database constraints, not code dependencies, so they do not affect the module graph of ADR-03.
 
 ### 2.2 Two layers
 
@@ -48,7 +49,7 @@ Isolation is enforced twice. A missing or wrong EF Core filter, an `IgnoreQueryF
 - If `SaveChanges` is called while no transaction is active, a `SaveChanges` interceptor throws a specific exception and nothing is sent to the database.
 - Setting either value at session level (`is_local = false`) is forbidden.
 - Outside a transaction, RLS returns no rows on tenant-scoped tables and on `admins_liga`, and rejects writes. This is the intended fail-closed behavior.
-- The `DbContext` and its interceptors live in a shared persistence namespace of Infrastructure that belongs to no module. The tenant context, the identity port, the `DbContext` and the interceptors are scoped; DbContext pooling is not used, and no singleton may capture scoped state.
+- The `DbContext` and its interceptors live in a shared persistence namespace of Infrastructure that belongs to no module. The tenant context, the identity port, the `DbContext` and the interceptors are scoped; DbContext pooling is not used, and no singleton may capture scoped state. Passing scoped interceptor instances must not make EF Core build a new internal service provider per scope; `ManyServiceProvidersCreatedWarning` is configured to throw so that this cannot happen silently. Because ASP.NET Core validates scopes and registrations only in Development, the API enables both validations in every environment. Without them, a singleton that depends on a scoped service starts in Production with a root-level instance shared by every request: depending on the code, it breaks every request at runtime or shares tenant state across requests. With validation, it fails at startup (found in the mutation audit, Spec 002 C-18).
 
 ### 2.4 Tenant context
 
@@ -83,7 +84,7 @@ Two tables are read **before** a tenant exists, so they cannot use the tenant po
 
 ### 2.8 Module placement
 
-- **Tenancy** (shared kernel) contains only the `TenantId` value and the `ITenantContext` port. It does not grow.
+- **Tenancy** (shared kernel) contains only the `TenantId` value, the `ITenantContext` port and the missing-tenant exception. It does not grow.
 - **Ligas** is a new module that owns `Liga` and `AdminLiga` and the ports that resolve a slug and a membership. Module graph row: `Ligas → Tenancy` (ADR-03 §7).
 - The API composition root uses the `Ligas` ports to resolve the tenant. Other modules receive the `TenantId` from `ITenantContext` and do not depend on `Ligas`.
 
@@ -141,3 +142,5 @@ The full list of requirements and tests is in Spec 002.
 - **C-10** *Raw SQL is forbidden, but RLS can only be proven with raw SQL. What is allowed?* In production code: migrations (policies, revokes) and the `set_config` statement of the transaction interceptor. In tests: isolation tests that connect to the disposable test database. Nothing else. Spec 003 turns this allowlist into an architecture test. Raised by the owner on 2026-10-30.
 - **C-11** *Are the two layers independent?* Only against missing filters, policies or context. They share the tenant value, so a wrong value passes both (§2.2, §4). Raised by the owner on 2026-10-30.
 - **C-12** *How is a public league resolved with neither tenant nor user?* The slug resolver reads `ligas` without a transaction and without context (§2.3); it is the only read allowed outside the unit-of-work port. Raised by the owner on 2026-10-30.
+- **C-13** *Foreign keys from `tenant_id` to `ligas`?* Yes, on `equipos` and `admins_liga`, added before the first migration is applied, with `ON DELETE RESTRICT`. Decided by the owner on 2026-10-30; delete behavior raised by the owner and set on 2026-10-31.
+- **C-14** *Rate limit on the first public endpoint?* Deferred as a temporary exception to `CLAUDE.md`, with owner, deadline (before the frontend is public, no later than 2026-11-16) and pending tests (real client IP, forged `X-Forwarded-For`, HTTP `429`). Recorded in Spec 002 §10. Decided by the owner on 2026-10-30.

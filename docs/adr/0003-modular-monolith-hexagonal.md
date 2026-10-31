@@ -41,6 +41,8 @@ Exception: Tenancy is the shared kernel and may be used whole. It contains only 
 
    An entry "X.Contracts" allows only that sub-namespace; an entry "X" (only Tenancy) allows the whole module.
 
+   **Shared namespaces that are not modules:** `Hosting` (Api composition: endpoints, middleware, configuration) and `Persistencia` (the unit-of-work port in Application; the `DbContext`, interceptors and migrations in Infrastructure, ADR-14 §2.3). They are not evaluated as modules, and any module may use them. Adding another shared namespace requires updating this list and `TablaDeModulos.NamespacesCompartidos` in the same commit.
+
 8. **Tenant context.** The abstraction for the current tenant is a port in Application. The `TenantId` is data of the message or command and never ambient thread state: each background job creates its own DI scope and sets the tenant from the message (the pipeline has no `HttpContext`).
 9. **A single process with bounded memory.** Every in-memory queue is bounded (`Channel` with a maximum capacity and a wait policy) and every in-memory cache has a `SizeLimit`. The LLM provider is remote: it does not consume model memory, but it does use buffers for responses.
 
@@ -67,3 +69,4 @@ Architecture tests in `GoalFlow.Tests/Architecture`: rules for references betwee
   - New module `Ligas` (league catalog and Admin membership), row `Ligas → Tenancy` in §7. Other modules receive the `TenantId` from the tenant context and do not depend on `Ligas`.
   - Tenancy reviewed: it holds only `TenantId`, `ITenantContext` and the missing-tenant exception (§6).
   - §3 states that Infrastructure and Api reach Domain through the transitive reference of Application.
+  - §7 lists the shared namespaces `Hosting` and `Persistencia`, which are not modules.

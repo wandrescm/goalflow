@@ -69,6 +69,7 @@ Estructura (ADR-03, en `docs/adr/`):
 
 - **No subas secretos ni cadenas de conexión al repositorio** (es público). Usa variables de entorno y `dotnet user-secrets` en local.
 - CORS restringido a los orígenes del frontend; límite de frecuencia en endpoints públicos.
+- **Excepción temporal (Spec 002 §10):** `GET /{slug}/equipos` no tiene límite de frecuencia hasta verificar la IP real del cliente en Render (ADR-05 R-15). Responsable: el propietario. Fecha límite: antes de publicar el frontend, a más tardar el 2026-11-16. Pruebas pendientes: IP real, `X-Forwarded-For` falsificado y respuesta `429`. No agregues otro endpoint público sin límite.
 
 ## Si se implementan funciones de IA
 
