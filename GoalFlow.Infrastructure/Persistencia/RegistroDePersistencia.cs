@@ -5,6 +5,7 @@ using GoalFlow.Application.Torneos;
 using GoalFlow.Infrastructure.Ligas;
 using GoalFlow.Infrastructure.Torneos;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,7 @@ public static class RegistroDePersistencia
                 ?? throw new InvalidOperationException($"Falta la cadena de conexión {NombreDeCadena}.");
 
             ConfigurarNpgsql(opciones, cadena);
+            opciones.ConfigureWarnings(w => w.Throw(CoreEventId.ManyServiceProvidersCreatedWarning));
             opciones.AddInterceptors(
                 proveedor.GetRequiredService<InterceptorDeTransacciones>(),
                 proveedor.GetRequiredService<InterceptorDeGuardado>());

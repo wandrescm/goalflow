@@ -40,6 +40,9 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
 
                     b.HasKey("UsuarioId", "TenantId");
 
+                    b.HasIndex("TenantId")
+                        .HasDatabaseName("ix_admins_liga_tenant_id");
+
                     b.ToTable("admins_liga", "goalflow");
                 });
 
@@ -89,6 +92,26 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
                         .HasDatabaseName("ix_equipos_tenant_id");
 
                     b.ToTable("equipos", "goalflow");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Ligas.AdminLiga", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Ligas.Liga", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_admins_liga_ligas");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Equipo", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Ligas.Liga", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_equipos_ligas");
                 });
 #pragma warning restore 612, 618
         }

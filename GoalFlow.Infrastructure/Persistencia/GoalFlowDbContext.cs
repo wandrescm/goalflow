@@ -40,6 +40,10 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
             admin.Property(a => a.UsuarioId).HasColumnName("user_id");
             ColumnaDeTenant(admin.Property(a => a.TenantId), "tenant_id");
             admin.Property(a => a.Rol).HasColumnName("rol");
+            admin.HasIndex(a => a.TenantId).HasDatabaseName("ix_admins_liga_tenant_id");
+            // Sin navegaciones, y Restrict explícito: el Cascade por defecto borraría una liga entera (ADR-14 §2.3).
+            admin.HasOne<Liga>().WithMany().HasForeignKey(a => a.TenantId)
+                .HasConstraintName("fk_admins_liga_ligas").OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Equipo>(equipo =>
@@ -50,6 +54,8 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
             ColumnaDeTenant(equipo.Property(e => e.TenantId), "tenant_id");
             equipo.Property(e => e.Nombre).HasColumnName("nombre");
             equipo.HasIndex(e => e.TenantId).HasDatabaseName("ix_equipos_tenant_id");
+            equipo.HasOne<Liga>().WithMany().HasForeignKey(e => e.TenantId)
+                .HasConstraintName("fk_equipos_ligas").OnDelete(DeleteBehavior.Restrict);
             equipo.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
         });
     }
