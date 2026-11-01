@@ -50,6 +50,9 @@ jobs:
       - name: Build image (not published)
         run: docker build --tag goalflow-api:${{ github.sha }} .
 
+      - name: Check Supabase CA certificate in image
+        run: docker run --rm --entrypoint test goalflow-api:${{ github.sha }} -r /app/certs/supabase-prod-ca-2021.crt
+
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [build-test, docker-build]
