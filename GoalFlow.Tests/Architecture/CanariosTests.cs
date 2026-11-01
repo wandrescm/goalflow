@@ -29,6 +29,7 @@ public class CanariosTests
     [Theory] // T-02
     [InlineData("DomainConAspNet")]
     [InlineData("DomainConExtensions")]
+    [InlineData("DomainConEfCore")]
     public void T02_canario_Domain_con_framework(string espacio) =>
         Falla(ReglasDeArquitectura.DomainSinFrameworks(Fixture(espacio)));
 

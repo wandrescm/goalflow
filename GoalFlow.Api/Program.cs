@@ -1,4 +1,5 @@
 using GoalFlow.Api.Hosting;
+using GoalFlow.Infrastructure.Persistencia;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,9 +10,16 @@ if (Environment.GetEnvironmentVariable("PORT") is { Length: > 0 } port)
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
 
+// ASP.NET Core only validates DI in Development; Production must fail at startup too (Spec 002 R-31).
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
 
 builder.Services.AddGoalFlowForwardedHeaders();
 builder.Services.AddGoalFlowCors();
+builder.Services.AddGoalFlowPersistencia();
 
 var app = builder.Build();
 
@@ -19,6 +27,7 @@ app.UseGoalFlowForwardedHeaders();
 app.UseGoalFlowCors();
 
 app.MapGet("/health", () => Results.Ok());
+app.MapGoalFlowEquipos();
 
 app.Run();
 

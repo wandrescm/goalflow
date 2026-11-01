@@ -17,6 +17,8 @@ RUN dotnet publish GoalFlow.Api/GoalFlow.Api.csproj -c Release --no-restore -o /
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app .
+# Supabase's public CA, used by Npgsql with VerifyFull (ADR-05 C-05).
+COPY certs/supabase-prod-ca-2021.crt certs/
 # Non-root user provided by the base image.
 USER $APP_UID
 ENTRYPOINT ["dotnet", "GoalFlow.Api.dll"]

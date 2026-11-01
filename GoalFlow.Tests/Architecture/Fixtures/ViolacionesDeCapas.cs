@@ -17,6 +17,14 @@ namespace GoalFlow.Tests.Architecture.Fixtures.DomainConExtensions
     }
 }
 
+namespace GoalFlow.Tests.Architecture.Fixtures.DomainConEfCore
+{
+    public class DomainViolador
+    {
+        public Microsoft.EntityFrameworkCore.DbContext? Contexto;
+    }
+}
+
 namespace GoalFlow.Tests.Architecture.Fixtures.ApplicationConInfrastructure
 {
     public class ApplicationViolador

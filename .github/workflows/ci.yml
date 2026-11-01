@@ -27,6 +27,21 @@ jobs:
       - name: Test
         run: dotnet test --no-build
 
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      # The owner reviews this script and applies it as postgres; CI never connects to production (ADR-14 2.10).
+      - name: Generate idempotent migration script
+        run: dotnet ef migrations script --idempotent --no-build --project GoalFlow.Infrastructure --startup-project GoalFlow.Infrastructure --output artifacts/migrations.sql
+
+      - name: Upload migration script
+        uses: actions/upload-artifact@v7
+        with:
+          name: migrations-sql
+          path: artifacts/migrations.sql
+          retention-days: 14
+          if-no-files-found: error
+
   docker-build:
     runs-on: ubuntu-24.04
     steps:
@@ -34,6 +49,9 @@ jobs:
 
       - name: Build image (not published)
         run: docker build --tag goalflow-api:${{ github.sha }} .
+
+      - name: Check Supabase CA certificate in image
+        run: docker run --rm --entrypoint test goalflow-api:${{ github.sha }} -r /app/certs/supabase-prod-ca-2021.crt
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

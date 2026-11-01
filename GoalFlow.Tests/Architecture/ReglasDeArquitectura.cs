@@ -97,6 +97,40 @@ public static class ReglasDeArquitectura
         return ResultadoRegla.Desde(violaciones);
     }
 
+    /// <summary>
+    /// Spec 002 T-02: el grafo aplicado a producción. Los namespaces compartidos no son módulos:
+    /// no se evalúan como origen y cualquier módulo puede usarlos como destino.
+    /// </summary>
+    public static ResultadoRegla GrafoDeModulosEnProduccion(
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>> permitidos,
+        IEnumerable<Type> tipos,
+        IReadOnlyCollection<string> raices,
+        IReadOnlyCollection<string> compartidos)
+    {
+        var conCompartidos = permitidos.ToDictionary(
+            fila => fila.Key,
+            fila => (IReadOnlyCollection<string>)[.. fila.Value, .. compartidos]);
+        var deModulos = tipos.Where(t => ModuloDe(t, raices) is not { } origen || !compartidos.Contains(origen.Modulo));
+
+        return GrafoDeModulos(conCompartidos, deModulos, raices);
+    }
+
+    // ---- Tenancy mínimo (Spec 002 T-01) ----
+
+    /// <summary>Un namespace Tenancy solo admite TenantId, ITenantContext y la excepción de tenant ausente.</summary>
+    public static ResultadoRegla TenancyMinimo(IEnumerable<Type> tipos, IReadOnlyCollection<string> permitidos)
+    {
+        var violaciones = tipos
+            .Where(t => t.Namespace is not null
+                && t.Namespace.Split('.').Contains("Tenancy")
+                && !t.IsDefined(typeof(CompilerGeneratedAttribute), false)
+                && !t.IsNested)
+            .Where(t => !permitidos.Contains(t.Name))
+            .Select(t => $"{t.FullName} no pertenece a Tenancy")
+            .ToList();
+        return ResultadoRegla.Desde(violaciones);
+    }
+
     // ---- Auxiliares ----
 
     private static ResultadoRegla ReferenciasPermitidas(Assembly ensamblado, Func<string, bool> permitida)
