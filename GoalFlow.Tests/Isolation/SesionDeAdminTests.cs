@@ -257,11 +257,15 @@ public class SesionDeAdminTests(BaseDeAislamiento db)
     [Fact]
     public async Task Handoff_sin_configuracion_de_Auth_solo_fallan_las_rutas_de_Admin()
     {
-        await using var fabrica = AnfitrionDeAdmin.Crear(db, new FuenteDeJwksDePrueba(_k1), conAuth: false);
+        var logs = new CapturaDeLogs();
+        await using var fabrica = AnfitrionDeAdmin.Crear(db, new FuenteDeJwksDePrueba(_k1), logs, conAuth: false);
         var cliente = fabrica.CreateClient();
 
         Assert.Equal(HttpStatusCode.OK, (await Pedir(cliente, "/health", "esto-no-es-un-token")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await Pedir(cliente, "/liga-a/equipos", "esto-no-es-un-token")).StatusCode);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Pedir(cliente, RutaA, TokensDePrueba.Firmar(_k1, UsuarioU1)));
+        var respuesta = await Pedir(cliente, RutaA, TokensDePrueba.Firmar(_k1, UsuarioU1));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, respuesta.StatusCode);
+        Assert.Contains(logs.Entradas, e => e.Contains("Missing configuration value Auth:"));
     }
 }
