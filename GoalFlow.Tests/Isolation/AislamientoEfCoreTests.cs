@@ -185,7 +185,7 @@ public class AislamientoEfCoreTests(BaseDeAislamiento db)
         var transaccionesIniciadas = 0;
         await using var servicios = db.CrearServicios(s => s.ConfigureDbContext<GoalFlowDbContext>(o => o
             .AddInterceptors(comandos)
-            // CurrentTransaction no basta: EF Core la asigna después del hook TransactionStarted, así que
+            // Spec 002 T-18: CurrentTransaction no basta: EF Core la asigna después del hook TransactionStarted, así que
             // lanzar ahí también la deja en null. El evento se emite antes del hook y delata esa transacción.
             .LogTo(_ => transaccionesIniciadas++, [RelationalEventId.TransactionStarted])));
 
