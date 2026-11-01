@@ -69,7 +69,7 @@ There are three hops, each with its own rule:
 |---|---|---|
 | Browser → Render | HTTPS | Render's proxy (managed certificate) |
 | Render proxy → API container | Plain HTTP inside Render's network | Kestrel on `PORT`; no certificate in the container |
-| API or CI workflow → Supabase | TLS | Npgsql / `psql` / `pg_dump` with TLS required |
+| API or CI workflow → Supabase | TLS | The API uses Npgsql with `VerifyFull` against Supabase's public CA (C-05); `psql` and `pg_dump` in workflows require TLS |
 
 **Forwarded headers.** Behind the proxy, every request appears to come from the proxy over `http`. The API runs the forwarded-headers middleware **first in the pipeline**, processing `X-Forwarded-For` (client IP) and `X-Forwarded-Proto` (original scheme). The client IP matters because public endpoints are rate-limited per client.
 
@@ -77,7 +77,7 @@ There are three hops, each with its own rule:
 - Clearing them is acceptable only because the container is reachable **exclusively** through Render's proxy.
 - `ForwardLimit` stays at **1**: only the last entry, added by the proxy, is used. A value a client injects in its own `X-Forwarded-For` lands earlier in the list and is ignored.
 - Observed after the first deployment: responses carry `Server: cloudflare` and a `CF-RAY` header, so a Cloudflare edge sits in front of Render's proxy (client → Cloudflare → Render proxy → container). Whether the last `X-Forwarded-For` entry is the real client IP or a Cloudflare address is not proven by the automated tests; it is verified on Render when the rate limiter exists (C-07). If it turns out to be a Cloudflare address, this section is revised before the rate limiter ships.
-- No TLS certificate or private key is stored in the image or the repository.
+- No private key is stored in the image or the repository, and the container holds no certificate of its own (Render terminates HTTPS). The only certificate in the repository and the image is **Supabase's public CA certificate** (`certs/supabase-prod-ca-2021.crt`, copied to `/app/certs/`), which the API uses to verify the database server (C-05). It is public data, not a secret.
 - Every database connection (API, keep-alive, backup) requires TLS. A connection that cannot negotiate TLS fails instead of falling back to plain text.
 
 ### 2.5 Restarts and in-memory state
@@ -150,9 +150,10 @@ There are three hops, each with its own rule:
 - A bug in the API cannot drop tables or create roles, and the public anonymous key cannot reach application data.
 - Only a commit that passed CI can be deployed, and the deployed SHA is visible in the workflow log.
 - Backups exist despite the free database plan, and a public repository does not expose them.
-- No certificates to manage.
+- No certificates of our own to issue or renew: Render manages the HTTPS certificate.
 
 **Negative / risks**
+- Supabase's public CA certificate is kept in `certs/` and in the image. When Supabase rotates it, the file must be replaced in a pull request before the old one expires; otherwise every database connection fails `VerifyFull`. Its expiry date is recorded in C-05.
 - Three roles and a role script to maintain; every new table needs its grants (handled in the migration that creates it).
 - Free instance: about one minute of cold start after 15 idle minutes. Acceptable in development, not with real users.
 - Session mode caps concurrency at the pool size; enough for the pilot scale, revisited if load grows.
@@ -184,9 +185,9 @@ There are three hops, each with its own rule:
 
 - **C-01** *Does `pg_dump` need a specific client version?* Yes: the client's major version must be equal to or newer than the server's. The server reported **PostgreSQL 17.11** on 2026-10-29, so the backup workflow installs a `pg_dump` 17 client (a 15 client cannot dump a 17 server).
 - **C-02** *When and how are EF Core migrations applied, and with which role?* Migrations need DDL, so they never run as `goalflow_app`. The mechanism (CI step or manual) is decided when the first migration exists (multi-tenancy work). **Resolved on 2026-10-30 (ADR-14 §2.10):** CI generates an idempotent SQL script and publishes it as an artifact; the owner reviews it and applies it as `postgres` in the Supabase SQL editor. CI never connects to the production database with `postgres`.
-- **C-03** *What is the Supavisor Pool Size on the project?* Read from the Supabase dashboard during the first deployment; `Maximum Pool Size` must stay below it.
+- **C-03** *What is the Supavisor Pool Size on the project?* Read from the Supabase dashboard during the first deployment; `Maximum Pool Size` must stay below it. **Resolved on 2026-10-31:** Pool Size is **15**. The API uses at most 10 (`Maximum Pool Size=10`), which leaves 5 for the keep-alive and backup workflows and for the owner's manual `psql` sessions. Any new long-running client must be counted against this budget.
 - **C-04** *Which frontend origin does CORS allow?* The production origin defined in ADR-09, plus the local development origin in the `Development` environment only.
-- **C-05** *Npgsql TLS mode: encrypt only (`Require`) or encrypt and verify the server certificate (`VerifyFull`)?* Decided during the first deployment after checking current Npgsql behaviour and whether Supabase provides the CA certificate. `VerifyFull` is preferred if available; never weaker than `Require`.
+- **C-05** *Npgsql TLS mode: encrypt only (`Require`) or encrypt and verify the server certificate (`VerifyFull`)?* Decided during the first deployment after checking current Npgsql behaviour and whether Supabase provides the CA certificate. `VerifyFull` is preferred if available; never weaker than `Require`. **Resolved on 2026-10-31: `VerifyFull`.** Supabase provides its CA certificate in the dashboard (Database → Settings → SSL Configuration). The owner verified it with `psql` as `goalflow_app` against the shared pooler in session mode (port 5432) with `sslmode=verify-full`: the connection succeeded, so the pooler's certificate is signed by that CA and matches the pooler host name. The certificate is public, so it is committed to the repository and copied into the runtime image; the connection string uses `SSL Mode=VerifyFull` with `Root Certificate` pointing to it. A Render secret file was not chosen: the image is reproducible and testable, and the file is not a secret. When Supabase rotates its CA, the file is replaced in a pull request before the old certificate expires.
 - **C-06** *Does the keep-alive keep Render awake?* No. It touches only the database (§2.8).
 - **C-07** *Does the container need HTTPS, and how is the forwarded-header setup verified?* No HTTPS in the container: Render terminates TLS. Verification happens at two levels, and neither replaces the other. Automated tests prove **our configuration**: with a fixed simulated proxy address, the last `X-Forwarded-For` entry wins, and a mutation (`ForwardLimit = 2`) must turn the spoofing test red. They cannot prove **Render's behaviour** (that its proxy appends the real client IP as the last entry). That is checked after deployment: send a request with a fake `X-Forwarded-For` value and confirm the API logs the real client IP, not the fake one. Whether the configuration is done in code or through the ASP.NET Core environment switch for forwarded headers is decided in the implementation; code is preferred because it is visible and testable.
 - **C-08** *What if `goalflow_app` cannot authenticate through the shared pooler?* The deployment stops and the problem is diagnosed. Falling back to `postgres` is not automatic: it requires an explicit, dated decision by the owner recorded in this ADR. **Resolved on 2026-10-29:** `goalflow_app` authenticated through the shared pooler (session mode) both from a local `psql` and from the keep-alive workflow on GitHub Actions; no fallback was needed.
