@@ -58,6 +58,14 @@ Estructura (ADR-03, en `docs/adr/`):
 - **Base de datos:** la API se conecta como `goalflow_app` por el pooler de Supabase en modo sesión, nunca como `postgres`. Las tablas viven en el schema `goalflow`, las crea `postgres` y `goalflow_app` nunca es dueño de una tabla. La Data API de Supabase está desactivada (ADR-05).
 - **Migraciones:** EF Core; las políticas RLS y los `revoke` van dentro de la migración. CI genera el script idempotente como artefacto; el propietario lo aplica como `postgres`. CI nunca se conecta a la base de producción para migrar.
 
+## Autenticación y autorización (ADR-01)
+
+- Supabase autentica; GoalFlow autoriza. La API valida el token ella misma: **solo ES256**, con llaves del JWKS por `kid`. Nunca confíes en el `alg` del token; HS256 y `none` se rechazan.
+- Claims obligatorios: `iss` y `aud` (`authenticated`) desde configuración, `exp` con `ClockSkew` de 30 s, `sub` UUID, `role` = `authenticated` e `is_anonymous` distinto de `true`. Si falla cualquiera, 401.
+- El rol de GoalFlow sale de `admins_liga.rol`, nunca del claim `role`. La membresía se consulta en cada petición de Admin, sin caché.
+- Orden en rutas de Admin: slug (404) → token (401) → membresía (403).
+- Nunca registres tokens, claims ni el encabezado `Authorization`. En pruebas, las llaves se generan en memoria: ninguna llave privada se commitea.
+
 ## Estándar de código
 
 - `Nullable` activado y advertencias tratadas como errores; centraliza estas opciones en `Directory.Build.props`.

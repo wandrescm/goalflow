@@ -20,6 +20,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 builder.Services.AddGoalFlowForwardedHeaders();
 builder.Services.AddGoalFlowCors();
 builder.Services.AddGoalFlowPersistencia();
+builder.Services.AddGoalFlowAutenticacion();
 
 var app = builder.Build();
 
@@ -28,6 +29,7 @@ app.UseGoalFlowCors();
 
 app.MapGet("/health", () => Results.Ok());
 app.MapGoalFlowEquipos();
+app.MapGoalFlowAdmin();
 
 app.Run();
 

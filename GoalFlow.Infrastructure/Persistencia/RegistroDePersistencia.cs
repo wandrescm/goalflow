@@ -28,6 +28,8 @@ public static class RegistroDePersistencia
         services.AddScoped<InterceptorDeGuardado>();
         services.AddScoped<IUnidadDeTrabajo, UnidadDeTrabajo>();
         services.AddScoped<IResolutorDeSlug, ResolutorDeSlug>();
+        services.AddScoped<ILectorDeMembresia, LectorDeMembresia>();
+        services.AddScoped<ConsultaDeMembresia>();
         services.AddScoped<ILectorDeEquipos, LectorDeEquipos>();
         services.AddScoped<ConsultaDeEquipos>();
 
