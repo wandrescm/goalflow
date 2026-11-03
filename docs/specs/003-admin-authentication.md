@@ -1,7 +1,7 @@
 # Spec 003: Admin authentication and league membership
 
 - **Status:** Approved
-- **Date:** 2026-11-01
+- **Date:** 2026-11-01 (amended on 2026-11-02 after the mutation audit: T-02, T-04, R-12, R-16, T-13, T-14)
 - **Related:** ADR-01 (authentication), ADR-14 (multi-tenancy), ADR-05 (C-09), ADR-03, Spec 002
 - **Effort:** Medium (default)
 
@@ -33,12 +33,13 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 | ID | Requirement |
 | --- | --- |
 | R-07 | When `GET /{slug}/admin/sesion` is requested with an unknown slug, the API shall respond 404, with or without a token. |
-| R-08 | When it is requested for an existing league without a token, or with a token that fails R-01 to R-03, the API shall respond 401. |
+| R-08 | When it is requested for an existing league without a token, or with a token that fails R-01 to R-03, the API shall respond 401 with the header `WWW-Authenticate: Bearer` and no error details in the header or the body (RFC 9110 requires the header on every 401). |
 | R-09 | When it is requested with a valid token whose user has no row in `admins_liga` for that league, the API shall respond 403. |
 | R-10 | When it is requested with a valid token whose user has a row in `admins_liga` for that league, the API shall respond 200 with the league slug and the GoalFlow role from `admins_liga.rol`. |
 | R-11 | If the membership row is deleted while the token is still valid, then the next request with that token shall get 403. |
-| R-12 | The membership check shall run inside a transaction that carries both the league (tenant) and the user (identity), through a port in `GoalFlow.Application.Ligas`. |
+| R-12 | The membership check shall run inside a transaction that carries both the league (tenant) and the user (identity), through a port in `GoalFlow.Application.Ligas`. The adapter shall filter **explicitly** by both the league and the user; RLS on `admins_liga` is the second layer, not the only one (ADR-14 §2.2). |
 | R-13 | The identity shall be set in `IIdentidadAutenticada` only from the `sub` of a token that passed validation. |
+| R-16 | If the JWKS cannot be loaded (network error, invalid document), then Admin routes shall respond 401 (fail closed) and the API shall log the failure at warning level or above, without the token. Public routes are not affected. |
 
 ### 3.3 Production check (manual, by the owner)
 
@@ -68,15 +69,17 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 | C-06 | Does `is_anonymous = true` give 401 or 403? | 401: anonymous sign-ins are not an accepted Admin identity, so the token fails validation. | Mentor, 2026-11-01 |
 | C-07 | Does Supabase expose an OpenID discovery document, or only the JWKS? | Not assumed. The implementation checks it; if there is no discovery document, the JWKS is loaded directly from `Auth:JwksUrl`. Recorded in the PR. | Pending (handoff) |
 | C-08 | Architecture test for `IgnoreQueryFilters` and the raw SQL allowlist? | Moved to the domain-model work. | Owner, 2026-11-01 (replanning) |
+| C-09 | Why did the HS256 mutation survive T-04? | In the audit of 2026-11-02, adding HS256 to `ValidAlgorithms` left T-04 green: the token's `kid` points to an EC key, and an EC key cannot verify an HMAC signature, so validation fails anyway. T-04 now has a behavioral case where the list is the only barrier (RS256 with a published RSA key) and a check of the effective configuration. The configuration check was proposed by the owner. | Owner and mentor, 2026-11-02 (mutation audit) |
+| C-10 | Is HS256 in the list exploitable today? | Not with the current JWKS, which holds only asymmetric keys. It would become exploitable if a symmetric key ever entered the key set, so the list stays strict and tested. | Mentor, 2026-11-02 |
 
 ## 6. Tests
 
 | Test ID | Covers | Description | Must fail when |
 | --- | --- | --- | --- |
 | T-01 | R-10 | Valid ES256 token, user is Admin of league A → 200 with `liga-a` and role `admin`. | The membership check is skipped or reads the wrong league. |
-| T-02 | R-08 | No token, league A → 401. | The route is not protected. |
+| T-02 | R-08 | No token, league A → 401 with `WWW-Authenticate` equal to `Bearer`, and neither the header nor the body contains `error` details. | The route is not protected, or the header is missing. |
 | T-03 | R-03 | Token signed by a different P-256 key with the same `kid` → 401. | Signature validation is disabled. |
-| T-04 | R-02 | Token with `alg: HS256` whose HMAC key is the test public key's bytes → 401; token with `alg: none` → 401. | The valid-algorithms list is removed or includes HS256. |
+| T-04 | R-01, R-02 | (a) `alg: HS256` with the test public key's bytes as HMAC secret → 401. (b) `alg: none` → 401. (c) **The algorithm list is the only barrier:** the test JWKS also publishes an RSA 2048 key K3 with its own `kid`; a token **correctly signed** with K3 using RS256 → 401. (d) **Effective configuration:** the `JwtBearerOptions` built by the real registration have `ValidAlgorithms` equal to exactly `[ES256]`. | (c) `ValidAlgorithms` is removed, or RS256 is added. (d) Any algorithm is added, including HS256. Cases (a) and (b) alone do not detect a widened list: the mutation audit showed that adding HS256 leaves them green, because an EC key cannot verify HMAC (C-09). |
 | T-05 | R-03 | One case each, all → 401: expired by 2 minutes; wrong `iss`; wrong `aud`; `role` = `anon`; `is_anonymous` = `true`; `sub` not a UUID. | The corresponding check is removed (one mutation per case). |
 | T-06 | R-03 | Token expired by 10 seconds → 200 (inside the 30-second skew); expired by 2 minutes → 401 (same as T-05). | The skew is set to zero (first case red) or left at the 5-minute default (T-05 expiry case red). |
 | T-07 | R-04, R-05 | (1) **Legitimate rotation:** the test JWKS source starts with key K1; K2 is added to the source; a token signed with K2 (unknown `kid` for the cache) → 200 after one on-demand refresh. (2) **No per-request reads:** 10 requests with K1 do not read the source again. (3) **Bounded refresh against unknown `kid`s:** inside one minimum interval, 10 tokens with 10 random `kid`s that are in no key set → all 401, and the source is read **at most once**. The counter is part of the test source. | On-demand refresh is disabled (case 1 stays 401), the JWKS is read on every request (case 2), or every unknown `kid` triggers a download (case 3: an attacker could make the API hammer Supabase's JWKS endpoint). |
@@ -85,6 +88,8 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 | T-10 | R-07 | Valid token and no token, slug `no-existe` → 404 in both. | Authentication runs before slug resolution. |
 | T-11 | R-12, R-13 | Connected as `goalflow_app` under RLS: if the identity is not set in the transaction, a real Admin gets 403. Covered by the mutation of T-01 (identity not set → T-01 red). | — |
 | T-12 | R-06 | With a capturing logger, one request of each kind (200, 401, 403) writes no log entry that contains the token or the word `Bearer`. | A log line includes the `Authorization` header or the token. |
+| T-13 | R-16 | The test JWKS source throws on read. A valid-looking ES256 token on `/liga-a/admin/sesion` → 401; a log entry at warning or above records the failure and contains neither the token nor `Bearer`; `GET /liga-a/equipos` → 200. | The failure surfaces as 500, or the token appears in the log. |
+| T-14 | R-12 | **Explicit user filter, without RLS:** the membership adapter runs with a superuser connection, so RLS does not apply. With tenant `liga-a` and the identity of a user with **no** membership there, it returns no role. | The adapter filters by league only and relies on RLS for the user (it then returns another Admin's role). |
 
 ## 7. Out of scope
 

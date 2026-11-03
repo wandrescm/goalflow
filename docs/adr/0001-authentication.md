@@ -1,7 +1,7 @@
 # ADR-01: Authentication of league Admins
 
 - **Status:** Accepted
-- **Date:** 2026-11-01
+- **Date:** 2026-11-01 (amended on 2026-11-02: §2.1 process switches and JWKS failure, §2.2 explicit user filter)
 - **Related:** ADR-14 (multi-tenancy, `admins_liga`), ADR-05 (hosting, Data API off, C-09, C-10), ADR-03 (modules), Spec 003
 
 ## 1. Context
@@ -32,11 +32,17 @@ Facts that shape the decision (checked on 2026-11-01):
   - `sub` must be a UUID;
   - `role` = `authenticated`;
   - `is_anonymous` must not be `true`.
-- A token that fails any check gives **401**. Tokens, claims and `Authorization` headers are never logged.
+- A token that fails any check gives **401** with `WWW-Authenticate: Bearer` and no error details. Tokens, claims and `Authorization` headers are never logged.
+- **If the JWKS cannot be loaded**, Admin routes fail closed with 401 and the failure is logged; public routes are not affected.
+- **Two process-wide `AppContext` switches** are set when authentication is registered. Both were required by tests, and both affect the whole process, not one request:
+  - `Microsoft.AspNetCore.Authentication.SuppressAutoDefaultScheme`: `WebApplication` adds `UseAuthentication` by itself, and a single registered scheme becomes the default. Without the switch, every request (public routes and `/health` included) would try to authenticate, and with no `Auth:*` configuration it would fail with 500. With it, only the Admin filter authenticates, explicitly.
+  - `Switch.Microsoft.IdentityModel.UpdateConfigAsBlocking`: by default the key refresh runs in the background, and the first token signed with a rotated key gets 401. With the switch, that request waits for the download. The wait happens at most once per minimum refresh interval (300 s).
+  - Both are public, documented switches. If a future version removes either one, the tests that required them (Spec 002 T-24 and Spec 003 T-07) turn red.
 
 ### 2.2 Authorization: GoalFlow decides, on every request
 
 - A valid token proves identity, not permission. Every Admin route checks the **current** membership in `admins_liga` for (`sub`, league of the route).
+- The membership query filters **explicitly by league and by user**. RLS on `admins_liga` (by identity) is the second layer, following the two-layer rule of ADR-14.
 - The Supabase `role` claim (`authenticated`) is not a GoalFlow role. The GoalFlow role comes from `admins_liga.rol`.
 - Order on an Admin route `/{slug}/admin/…`:
   1. resolve the slug, or **404** (leagues are public; ADR-14 §2.6);
