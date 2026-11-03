@@ -5,15 +5,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoalFlow.Infrastructure.Ligas;
 
-public class LectorDeMembresia(GoalFlowDbContext contexto, ITenantContext tenantContext) : ILectorDeMembresia
+public class LectorDeMembresia(
+    GoalFlowDbContext contexto, ITenantContext tenantContext, IIdentidadAutenticada identidad) : ILectorDeMembresia
 {
-    // admins_liga no tiene filtro Tenant y su RLS solo restringe por usuario: la liga se filtra aquí.
+    // admins_liga no tiene filtro Tenant. Liga y usuario se filtran aquí; RLS es la segunda capa (ADR-01 §2.2).
     public Task<string?> ObtenerRolAsync(CancellationToken cancellationToken)
     {
         var tenant = tenantContext.Current;
+        var usuario = identidad.UsuarioId;
 
         return contexto.AdminsLiga
-            .Where(a => a.TenantId == tenant)
+            .Where(a => a.TenantId == tenant && a.UsuarioId == usuario)
             .Select(a => a.Rol)
             .FirstOrDefaultAsync(cancellationToken);
     }

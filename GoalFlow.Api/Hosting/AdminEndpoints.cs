@@ -33,7 +33,11 @@ public static class AdminEndpoints
 
             var autenticacion = await http.AuthenticateAsync(AutenticacionExtensions.Esquema);
             if (!autenticacion.Succeeded || AutenticacionExtensions.UsuarioDe(autenticacion.Principal) is not { } usuario)
+            {
+                // RFC 9110 requires the header on every 401; no error details (Spec 003 R-08).
+                http.Response.Headers.WWWAuthenticate = "Bearer";
                 return Results.Unauthorized();
+            }
 
             tenantContext.Establecer(liga.Id);
             identidad.Establecer(usuario);

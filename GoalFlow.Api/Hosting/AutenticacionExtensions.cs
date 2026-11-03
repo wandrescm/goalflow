@@ -32,10 +32,10 @@ public static class AutenticacionExtensions
         services.AddSingleton<IDocumentRetriever>(new HttpDocumentRetriever());
         services.AddAuthentication().AddJwtBearer(Esquema);
         services.AddOptions<JwtBearerOptions>(Esquema)
-            .Configure<IConfiguration, IDocumentRetriever>((options, configuration, fuente) =>
+            .Configure<IConfiguration, IDocumentRetriever, ILogger<LectorDeJwks>>((options, configuration, fuente, logger) =>
             {
                 options.MapInboundClaims = false;
-                options.ConfigurationManager = CrearGestorDeLlaves(configuration, fuente);
+                options.ConfigurationManager = CrearGestorDeLlaves(configuration, fuente, logger);
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidAlgorithms = [SecurityAlgorithms.EcdsaSha256],
@@ -73,8 +73,8 @@ public static class AutenticacionExtensions
     }
 
     private static ConfigurationManager<OpenIdConnectConfiguration> CrearGestorDeLlaves(
-        IConfiguration configuration, IDocumentRetriever fuente) =>
-        new(Requerido(configuration, JwksUrlKey), new LectorDeJwks(), fuente)
+        IConfiguration configuration, IDocumentRetriever fuente, ILogger<LectorDeJwks> logger) =>
+        new(Requerido(configuration, JwksUrlKey), new LectorDeJwks(logger), fuente)
         {
             AutomaticRefreshInterval = TimeSpan.FromSeconds(RequeridoEntero(configuration, JwksRefreshSecondsKey)),
             RefreshInterval = TimeSpan.FromSeconds(RequeridoEntero(configuration, JwksMinRefreshSecondsKey)),
@@ -89,15 +89,24 @@ public static class AutenticacionExtensions
         int.Parse(Requerido(configuration, clave), System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>Loads the JWKS directly; no discovery document is involved (Spec 003 C-07).</summary>
-    private sealed class LectorDeJwks : IConfigurationRetriever<OpenIdConnectConfiguration>
+    internal sealed class LectorDeJwks(ILogger<LectorDeJwks> logger) : IConfigurationRetriever<OpenIdConnectConfiguration>
     {
         public async Task<OpenIdConnectConfiguration> GetConfigurationAsync(
             string address, IDocumentRetriever retriever, CancellationToken cancel)
         {
-            var llaves = new JsonWebKeySet(await retriever.GetDocumentAsync(address, cancel));
-            var configuracion = new OpenIdConnectConfiguration();
-            foreach (var llave in llaves.GetSigningKeys()) configuracion.SigningKeys.Add(llave);
-            return configuracion;
+            try
+            {
+                var llaves = new JsonWebKeySet(await retriever.GetDocumentAsync(address, cancel));
+                var configuracion = new OpenIdConnectConfiguration();
+                foreach (var llave in llaves.GetSigningKeys()) configuracion.SigningKeys.Add(llave);
+                return configuracion;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // JwtBearer turns this into a 401 and only logs it at Information (Spec 003 R-16).
+                logger.LogWarning(exception, "Could not load the JWKS; Admin routes fail closed.");
+                throw;
+            }
         }
     }
 }
