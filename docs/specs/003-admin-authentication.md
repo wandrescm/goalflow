@@ -73,6 +73,7 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 | C-09 | Why did the HS256 mutation survive T-04? | In the audit of 2026-11-02, adding HS256 to `ValidAlgorithms` left T-04 green: the token's `kid` points to an EC key, and an EC key cannot verify an HMAC signature, so validation fails anyway. T-04 now has a behavioral case where the list is the only barrier (RS256 with a published RSA key) and a check of the effective configuration. The configuration check was proposed by the owner. | Owner and mentor, 2026-11-02 (mutation audit) |
 | C-10 | Is HS256 in the list exploitable today? | Not with the current JWKS, which holds only asymmetric keys. It would become exploitable if a symmetric key ever entered the key set, so the list stays strict and tested. | Mentor, 2026-11-02 |
 | C-11 | What happens if the API starts while the JWKS cannot be loaded? | Found by Claude Code on 2026-11-02: with no keys cached, every Admin request with a well-formed JWT (which anyone can forge, because the signature is checked only after the keys are loaded) triggered a new download and a warning. Decision: a 30-second back-off after a failure (R-17). Trade-off: a transient error at startup keeps Admins on 401 for up to 30 s. With keys already cached, a failed refresh keeps the previous keys. | Owner, 2026-11-02 |
+| C-12 | Must the concurrent first JWKS load be tested? | No. It is documented as a bounded, accepted risk in §10: the worst case is one extra download per simultaneous request, once; a test would mostly verify the library's internal lock and would depend on timing. | Owner, 2026-11-02 |
 
 ## 6. Tests
 
@@ -118,6 +119,8 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 | R-01 | T-01 | | |
 
 ## 10. Risks and open items
+
+- **Concurrent first JWKS load (accepted, not tested; raised by the owner on 2026-11-02).** T-15 proves the back-off for sequential requests. It does not prove that requests arriving at the very same moment as the first failed load share a single download. The failure is recorded before the exception leaves the key reader, and IdentityModel's `ConfigurationManager` (blocking mode) is expected to serialize the initial load; this is inferred from the library, not measured. Worst case: one extra download per request that arrives in that instant, once, during a startup outage. It is bounded, unlike the per-request downloads that R-17 removed. Decided by the owner on 2026-11-02 (C-12).
 
 - **Key rotation:** a rotation must be planned (standby key → wait for caches → rotate). Covered in code by R-04; operationally by ADR-01 §4.
 - **Supabase Auth accounts outside the backup** (ADR-05 C-10): to be decided before fan sign-in.
