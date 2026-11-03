@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -166,17 +167,30 @@ public sealed class CapturaDeLogs : ILoggerProvider
     }
 }
 
+/// <summary>Reloj que solo avanza cuando la prueba lo pide (Spec 003 T-15).</summary>
+public sealed class RelojDePrueba : TimeProvider
+{
+    private DateTimeOffset _ahora = DateTimeOffset.UtcNow;
+
+    public override DateTimeOffset GetUtcNow() => _ahora;
+
+    public void Avanzar(TimeSpan tiempo) => _ahora += tiempo;
+}
+
 /// <summary>La API real contra el contenedor, con el JWKS en memoria. Ninguna prueba llama a Supabase.</summary>
 public static class AnfitrionDeAdmin
 {
+    public static readonly TimeSpan EsperaTrasFallo = TimeSpan.FromSeconds(2);
+
     public static WebApplicationFactory<Program> Crear(
-        BaseDeAislamiento db, FuenteDeJwksDePrueba fuente, CapturaDeLogs? logs = null, bool conAuth = true)
+        BaseDeAislamiento db, FuenteDeJwksDePrueba fuente, CapturaDeLogs? logs = null, bool conAuth = true, TimeProvider? reloj = null)
     {
         var ajustes = new Dictionary<string, string?> { ["ConnectionStrings:GoalFlow"] = db.CadenaApp };
         if (conAuth)
         {
             ajustes["Auth:Issuer"] = TokensDePrueba.Emisor;
             ajustes["Auth:JwksUrl"] = "https://proyecto-de-prueba.invalid/auth/v1/.well-known/jwks.json";
+            ajustes["Auth:JwksFailureBackoffSeconds"] = EsperaTrasFallo.TotalSeconds.ToString(CultureInfo.InvariantCulture);
         }
         else
         {
@@ -191,6 +205,11 @@ public static class AnfitrionDeAdmin
             {
                 servicios.RemoveAll<IDocumentRetriever>();
                 servicios.AddSingleton<IDocumentRetriever>(fuente);
+                if (reloj is not null)
+                {
+                    servicios.RemoveAll<TimeProvider>();
+                    servicios.AddSingleton(reloj);
+                }
             });
 
             if (logs is not null)
