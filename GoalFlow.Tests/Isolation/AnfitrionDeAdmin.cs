@@ -59,20 +59,31 @@ public sealed class LlaveDePrueba
 public sealed class FuenteDeJwksDePrueba(params LlaveDePrueba[] iniciales) : IDocumentRetriever
 {
     private readonly List<LlaveDePrueba> _llaves = [.. iniciales];
+    private readonly List<object> _otrasJwk = [];
     private int _lecturas;
 
     public int Lecturas => Volatile.Read(ref _lecturas);
+
+    /// <summary>Si se fija, reemplaza el documento: para simular una fuente caída o inválida (T-13).</summary>
+    public Func<string>? Documento { get; set; }
 
     public void Agregar(LlaveDePrueba llave)
     {
         lock (_llaves) _llaves.Add(llave);
     }
 
+    public void AgregarJwk(object jwk)
+    {
+        lock (_llaves) _otrasJwk.Add(jwk);
+    }
+
     public Task<string> GetDocumentAsync(string address, CancellationToken cancel)
     {
         Interlocked.Increment(ref _lecturas);
+        if (Documento is not null) return Task.FromResult(Documento());
+
         lock (_llaves)
-            return Task.FromResult(JsonSerializer.Serialize(new { keys = _llaves.Select(l => l.JwkPublica()) }));
+            return Task.FromResult(JsonSerializer.Serialize(new { keys = _llaves.Select(l => l.JwkPublica()).Concat(_otrasJwk) }));
     }
 }
 
@@ -118,13 +129,21 @@ public static class TokensDePrueba
 /// <summary>Logger que guarda todo lo que la API escribe, excepciones incluidas (Spec 003 T-12).</summary>
 public sealed class CapturaDeLogs : ILoggerProvider
 {
-    private readonly List<string> _entradas = [];
+    private readonly List<(LogLevel Nivel, string Texto)> _entradas = [];
 
     public IReadOnlyList<string> Entradas
     {
         get
         {
-            lock (_entradas) return [.. _entradas];
+            lock (_entradas) return [.. _entradas.Select(e => e.Texto)];
+        }
+    }
+
+    public IReadOnlyList<string> Advertencias
+    {
+        get
+        {
+            lock (_entradas) return [.. _entradas.Where(e => e.Nivel >= LogLevel.Warning).Select(e => e.Texto)];
         }
     }
 
@@ -142,7 +161,7 @@ public sealed class CapturaDeLogs : ILoggerProvider
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
-            lock (captura._entradas) captura._entradas.Add($"{formatter(state, exception)} {exception}");
+            lock (captura._entradas) captura._entradas.Add((logLevel, $"{formatter(state, exception)} {exception}"));
         }
     }
 }

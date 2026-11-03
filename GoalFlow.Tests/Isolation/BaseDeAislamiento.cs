@@ -85,6 +85,18 @@ public sealed class BaseDeAislamiento : IAsyncLifetime
         return servicios.BuildServiceProvider(validateScopes: true);
     }
 
+    /// <summary>El registro real de DI como superusuario: RLS no aplica. Solo para probar los filtros del código (Spec 003 T-14).</summary>
+    public ServiceProvider CrearServiciosComoSuperusuario()
+    {
+        var configuracion = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:GoalFlow"] = CadenaSuperusuario })
+            .Build();
+
+        var servicios = new ServiceCollection().AddSingleton<IConfiguration>(configuracion);
+        servicios.AddGoalFlowPersistencia();
+        return servicios.BuildServiceProvider(validateScopes: true);
+    }
+
     public async Task EjecutarComoSuperusuario(string sql)
     {
         await using var conexion = new NpgsqlConnection(CadenaSuperusuario);

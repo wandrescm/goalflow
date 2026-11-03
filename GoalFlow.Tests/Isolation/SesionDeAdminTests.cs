@@ -1,8 +1,12 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using static GoalFlow.Tests.Isolation.BaseDeAislamiento;
 
@@ -51,9 +55,15 @@ public class SesionDeAdminTests(BaseDeAislamiento db)
     {
         await using var fabrica = Anfitrion();
 
-        var respuesta = await Pedir(fabrica.CreateClient(), RutaA);
+        var cliente = fabrica.CreateClient();
+        var vencido = TokensDePrueba.Firmar(_k1, UsuarioU1, c => c["exp"] = EnSegundos(TimeSpan.FromMinutes(-2)));
 
-        Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+        foreach (var respuesta in new[] { await Pedir(cliente, RutaA), await Pedir(cliente, RutaA, vencido) })
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+            Assert.Equal("Bearer", respuesta.Headers.WwwAuthenticate.ToString());
+            Assert.Empty(await respuesta.Content.ReadAsStringAsync());
+        }
     }
 
     [Fact]
@@ -77,6 +87,39 @@ public class SesionDeAdminTests(BaseDeAislamiento db)
     public async Task T04_alg_none_devuelve_401()
     {
         Assert.Equal(HttpStatusCode.Unauthorized, await EstadoCon(TokensDePrueba.SinFirma(_k1.Kid, UsuarioU1)));
+    }
+
+    [Fact]
+    public async Task T04_RS256_bien_firmado_con_una_llave_publicada_devuelve_401()
+    {
+        using var rsa = RSA.Create(2048);
+        const string kid = "k3";
+        var parametros = rsa.ExportParameters(includePrivateParameters: false);
+        var fuente = new FuenteDeJwksDePrueba(_k1);
+        fuente.AgregarJwk(new
+        {
+            kty = "RSA",
+            alg = "RS256",
+            use = "sig",
+            kid,
+            n = Base64UrlEncoder.Encode(parametros.Modulus),
+            e = Base64UrlEncoder.Encode(parametros.Exponent),
+        });
+        var credenciales = new SigningCredentials(new RsaSecurityKey(rsa) { KeyId = kid }, SecurityAlgorithms.RsaSha256);
+        await using var fabrica = AnfitrionDeAdmin.Crear(db, fuente);
+
+        var respuesta = await Pedir(fabrica.CreateClient(), RutaA, TokensDePrueba.Firmar(credenciales, UsuarioU1));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+    }
+
+    [Fact]
+    public async Task T04_las_opciones_del_registro_real_solo_admiten_ES256()
+    {
+        await using var fabrica = Anfitrion();
+        var opciones = fabrica.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>().Get("Supabase");
+
+        Assert.Equal(["ES256"], opciones.TokenValidationParameters.ValidAlgorithms);
     }
 
     public static TheoryData<string, object> ClaimsInvalidos => new()
@@ -240,6 +283,34 @@ public class SesionDeAdminTests(BaseDeAislamiento db)
             Assert.DoesNotContain(valido.Split('.')[1], entrada);
             Assert.DoesNotContain("Bearer", entrada);
         });
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T13_sin_JWKS_la_ruta_de_Admin_responde_401_y_las_publicas_siguen(bool fuenteCaida)
+    {
+        var logs = new CapturaDeLogs();
+        var fuente = new FuenteDeJwksDePrueba(_k1)
+        {
+            Documento = fuenteCaida ? () => throw new HttpRequestException("JWKS no disponible") : () => "esto no es un JWKS",
+        };
+        await using var fabrica = AnfitrionDeAdmin.Crear(db, fuente, logs);
+        var cliente = fabrica.CreateClient();
+        var token = TokensDePrueba.Firmar(_k1, UsuarioU1);
+
+        var respuesta = await Pedir(cliente, RutaA, token);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+        Assert.Equal("Bearer", respuesta.Headers.WwwAuthenticate.ToString());
+        Assert.NotEmpty(logs.Advertencias);
+        Assert.All(logs.Entradas, entrada =>
+        {
+            Assert.DoesNotContain(token, entrada);
+            Assert.DoesNotContain(token.Split('.')[1], entrada);
+        });
+        Assert.All(logs.Advertencias, entrada => Assert.DoesNotContain("Bearer", entrada));
+        Assert.Equal(HttpStatusCode.OK, (await Pedir(cliente, "/liga-a/equipos")).StatusCode);
     }
 
     [Fact]
