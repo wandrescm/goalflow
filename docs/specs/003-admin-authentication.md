@@ -1,6 +1,6 @@
 # Spec 003: Admin authentication and league membership
 
-- **Status:** Approved
+- **Status:** Implemented (2026-11-02; PR #8, merge commit `00e6c58`)
 - **Date:** 2026-11-01 (amended on 2026-11-02 after the mutation audit and the JWKS finding: R-17, T-15, C-11; T-02, T-04, R-12, R-16, T-13, T-14)
 - **Related:** ADR-01 (authentication), ADR-14 (multi-tenancy), ADR-05 (C-09), ADR-03, Spec 002
 - **Effort:** Medium (default)
@@ -105,18 +105,43 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 
 ## 8. Definition of done
 
-- [ ] All tests above pass and none was modified to make it pass.
-- [ ] Every requirement maps to at least one test or to a production check (R-14, R-15).
-- [ ] Production checks R-14 and R-15 passed, with evidence recorded in the PR.
-- [ ] No new warnings; no secrets or private keys in the diff.
-- [ ] ADR-05 C-09 updated after the production check.
-- [ ] PR description contains the validation table with real results.
+- [x] All tests above pass and none was modified to make it pass. T-02 and T-04 only gained cases and assertions when this Spec was amended after the mutation audit (C-09).
+- [x] Every requirement maps to at least one test or to a production check (R-14, R-15).
+- [x] Production checks R-14 and R-15 passed, with evidence recorded in the PR and below.
+- [x] No new warnings; no secrets or private keys in the diff. All test keys are generated in memory.
+- [x] ADR-05 C-09 updated after the production check.
+- [x] PR description contains the validation table with real results.
 
-## 9. Validation (filled at PR time)
+## 9. Validation
+
+Filled at closing, after the production check. During review, the evidence lived in the description of PR #8.
+
+**Automated:** 104/104 tests (71 from Spec 002, unchanged, and 33 from this Spec). CI on the merge commit: `build-test` 39 s, `docker-build` 28 s, `deploy` 5 s.
 
 | Requirement | Test | Result | Evidence |
 | --- | --- | --- | --- |
-| R-01 | T-01 | | |
+| R-01 | T-01, T-03, T-04 (c), T-07 case 3 | Pass | Another key with the same `kid` → 401; RS256 correctly signed with a published RSA key → 401 |
+| R-02 | T-04 (a–d) | Pass | HS256 with the public key as secret, `none`, RS256 → 401; effective `ValidAlgorithms` = `[ES256]`. Mutation "add HS256" survived the first T-04 and is now caught by case (d); M1: 2 red, M2: 1 red |
+| R-03 | T-03, T-05, T-06, `nbf` case | Pass | Expired by 10 s → 200; by 2 min → 401. Mutation T-06 (default skew): 1 red |
+| R-04, R-05 | T-07 (3 cases) | Pass | Rotation → 200 after 1 read; no per-request reads; 10 random `kid`s → at most 1 read. Mutation T-07 (non-blocking refresh): 1 red |
+| R-06 | T-12 | Pass | Trace-level capture, exceptions included: no token, no `Bearer` |
+| R-07 | T-10 | Pass | 404 with and without a token. Mutation T-10 (`RequireAuthorization`): 1 red |
+| R-08 | T-02 | Pass | 401 with exactly `WWW-Authenticate: Bearer` and an empty body |
+| R-09 | T-08 | Pass | Mutation T-08 (no league filter): 1 red |
+| R-10 | T-01 | Pass | `{ "slug": "liga-a", "rol": "admin" }`. Mutation T-01 (identity not set): 7 red |
+| R-11 | T-09 | Pass | Mutation T-09 (cached membership): 1 red |
+| R-12 | T-14, T-11 | Pass | As superuser, without RLS, a non-member gets no role; M3 (no user filter): 1 red |
+| R-13 | T-01, T-11 | Pass | |
+| R-14 | Production check | Pass | See below |
+| R-15 | Production check | Pass | See below |
+| R-16 | T-13 (2 cases) | Pass | Failing source and invalid document → 401 with a warning, no token in the log; public route → 200 |
+| R-17 | T-15 (5 cases) | Pass | 5 requests inside the back-off → 1 read and 1 warning; forged JWT → 0 reads; after the period → 200 after 1 read. M4 (zero back-off): 3 red |
+
+**Production (owner):**
+- **R-15, 2026-11-02:** with sign-up enabled, `POST /auth/v1/signup` with the publishable key → 200 and a user was created (then deleted). With sign-up disabled → 422 `signup_disabled`.
+- **R-14 with the release image locally, against the production database, 2026-11-02:** a real Supabase ES256 token gave: no token → 401 with `WWW-Authenticate: Bearer`; Admin of `liga-humo` → 200 `{"slug":"liga-humo","rol":"admin"}`; `liga-humo-2` → 403; membership revoked, same token → 403.
+- **R-14 in Render, `00e6c58` Live, 2026-11-02:** the same four results. The old code had no `/{slug}/admin/sesion` route and would have answered 404, so these responses tell the two versions apart.
+- All four predictions were written before each run, and all were correct.
 
 ## 10. Risks and open items
 

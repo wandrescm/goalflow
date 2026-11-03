@@ -62,7 +62,9 @@ What this Spec explicitly does not do.
 - [ ] ADRs updated if a decision changed.
 - [ ] PR description contains the validation table with real results.
 
-## 9. Validation (filled at PR time)
+## 9. Validation (filled in the closing commit)
+
+> While the PR is under review, this evidence lives in the PR description. After the production check, a closing docs commit fills this table with real results, marks §8 and sets the status to Implemented. A box is never checked, and no result is written, before its evidence exists.
 
 | Requirement | Test | Result | Evidence |
 | --- | --- | --- | --- |
