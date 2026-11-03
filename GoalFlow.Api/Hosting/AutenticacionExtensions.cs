@@ -15,6 +15,7 @@ public static class AutenticacionExtensions
     public const string JwksUrlKey = "Auth:JwksUrl";
     public const string JwksRefreshSecondsKey = "Auth:JwksRefreshSeconds";
     public const string JwksMinRefreshSecondsKey = "Auth:JwksMinRefreshSeconds";
+    public const string JwksFailureBackoffSecondsKey = "Auth:JwksFailureBackoffSeconds";
 
     private const string Audiencia = "authenticated";
     private const string RolDeSupabase = "authenticated";
@@ -30,12 +31,13 @@ public static class AutenticacionExtensions
         AppContext.SetSwitch("Switch.Microsoft.IdentityModel.UpdateConfigAsBlocking", true);
 
         services.AddSingleton<IDocumentRetriever>(new HttpDocumentRetriever());
+        services.AddSingleton(TimeProvider.System);
         services.AddAuthentication().AddJwtBearer(Esquema);
         services.AddOptions<JwtBearerOptions>(Esquema)
-            .Configure<IConfiguration, IDocumentRetriever, ILogger<LectorDeJwks>>((options, configuration, fuente, logger) =>
+            .Configure<IConfiguration, IDocumentRetriever, ILogger<LectorDeJwks>, TimeProvider>((options, configuration, fuente, logger, reloj) =>
             {
                 options.MapInboundClaims = false;
-                options.ConfigurationManager = CrearGestorDeLlaves(configuration, fuente, logger);
+                options.ConfigurationManager = CrearGestorDeLlaves(configuration, fuente, logger, reloj);
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidAlgorithms = [SecurityAlgorithms.EcdsaSha256],
@@ -73,8 +75,11 @@ public static class AutenticacionExtensions
     }
 
     private static ConfigurationManager<OpenIdConnectConfiguration> CrearGestorDeLlaves(
-        IConfiguration configuration, IDocumentRetriever fuente, ILogger<LectorDeJwks> logger) =>
-        new(Requerido(configuration, JwksUrlKey), new LectorDeJwks(logger), fuente)
+        IConfiguration configuration, IDocumentRetriever fuente, ILogger<LectorDeJwks> logger, TimeProvider reloj) =>
+        new(
+            Requerido(configuration, JwksUrlKey),
+            new LectorDeJwks(logger, reloj, TimeSpan.FromSeconds(RequeridoEntero(configuration, JwksFailureBackoffSecondsKey))),
+            fuente)
         {
             AutomaticRefreshInterval = TimeSpan.FromSeconds(RequeridoEntero(configuration, JwksRefreshSecondsKey)),
             RefreshInterval = TimeSpan.FromSeconds(RequeridoEntero(configuration, JwksMinRefreshSecondsKey)),
@@ -89,20 +94,31 @@ public static class AutenticacionExtensions
         int.Parse(Requerido(configuration, clave), System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>Loads the JWKS directly; no discovery document is involved (Spec 003 C-07).</summary>
-    internal sealed class LectorDeJwks(ILogger<LectorDeJwks> logger) : IConfigurationRetriever<OpenIdConnectConfiguration>
+    internal sealed class LectorDeJwks(ILogger<LectorDeJwks> logger, TimeProvider reloj, TimeSpan esperaTrasFallo)
+        : IConfigurationRetriever<OpenIdConnectConfiguration>
     {
+        private sealed record Fallo(DateTimeOffset Momento, Exception Excepcion);
+
+        private volatile Fallo? _ultimoFallo;
+
         public async Task<OpenIdConnectConfiguration> GetConfigurationAsync(
             string address, IDocumentRetriever retriever, CancellationToken cancel)
         {
+            // With no keys cached, the manager calls this on every request, even for a forged token (Spec 003 R-17).
+            if (_ultimoFallo is { } fallo && reloj.GetUtcNow() < fallo.Momento + esperaTrasFallo)
+                throw new InvalidOperationException("The JWKS is in back-off after a failed load.", fallo.Excepcion);
+
             try
             {
                 var llaves = new JsonWebKeySet(await retriever.GetDocumentAsync(address, cancel));
                 var configuracion = new OpenIdConnectConfiguration();
                 foreach (var llave in llaves.GetSigningKeys()) configuracion.SigningKeys.Add(llave);
+                _ultimoFallo = null;
                 return configuracion;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
+                _ultimoFallo = new Fallo(reloj.GetUtcNow(), exception);
                 // JwtBearer turns this into a 401 and only logs it at Information (Spec 003 R-16).
                 logger.LogWarning(exception, "Could not load the JWKS; Admin routes fail closed.");
                 throw;
