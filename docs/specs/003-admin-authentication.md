@@ -1,7 +1,7 @@
 # Spec 003: Admin authentication and league membership
 
 - **Status:** Approved
-- **Date:** 2026-11-01 (amended on 2026-11-02 after the mutation audit: T-02, T-04, R-12, R-16, T-13, T-14)
+- **Date:** 2026-11-01 (amended on 2026-11-02 after the mutation audit and the JWKS finding: R-17, T-15, C-11; T-02, T-04, R-12, R-16, T-13, T-14)
 - **Related:** ADR-01 (authentication), ADR-14 (multi-tenancy), ADR-05 (C-09), ADR-03, Spec 002
 - **Effort:** Medium (default)
 
@@ -40,6 +40,7 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 | R-12 | The membership check shall run inside a transaction that carries both the league (tenant) and the user (identity), through a port in `GoalFlow.Application.Ligas`. The adapter shall filter **explicitly** by both the league and the user; RLS on `admins_liga` is the second layer, not the only one (ADR-14 §2.2). |
 | R-13 | The identity shall be set in `IIdentidadAutenticada` only from the `sub` of a token that passed validation. |
 | R-16 | If the JWKS cannot be loaded (network error, invalid document), then Admin routes shall respond 401 (fail closed) and the API shall log the failure at warning level or above, without the token. Public routes are not affected. |
+| R-17 | After a failed JWKS load, the API shall not try to load it again for a configurable back-off period (`Auth:JwksFailureBackoffSeconds`, 30 s in production). Within that period, Admin requests shall get 401 without any download, and the failure shall be logged at warning level once per period, not once per request. |
 
 ### 3.3 Production check (manual, by the owner)
 
@@ -71,6 +72,7 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 | C-08 | Architecture test for `IgnoreQueryFilters` and the raw SQL allowlist? | Moved to the domain-model work. | Owner, 2026-11-01 (replanning) |
 | C-09 | Why did the HS256 mutation survive T-04? | In the audit of 2026-11-02, adding HS256 to `ValidAlgorithms` left T-04 green: the token's `kid` points to an EC key, and an EC key cannot verify an HMAC signature, so validation fails anyway. T-04 now has a behavioral case where the list is the only barrier (RS256 with a published RSA key) and a check of the effective configuration. The configuration check was proposed by the owner. | Owner and mentor, 2026-11-02 (mutation audit) |
 | C-10 | Is HS256 in the list exploitable today? | Not with the current JWKS, which holds only asymmetric keys. It would become exploitable if a symmetric key ever entered the key set, so the list stays strict and tested. | Mentor, 2026-11-02 |
+| C-11 | What happens if the API starts while the JWKS cannot be loaded? | Found by Claude Code on 2026-11-02: with no keys cached, every Admin request with a well-formed JWT (which anyone can forge, because the signature is checked only after the keys are loaded) triggered a new download and a warning. Decision: a 30-second back-off after a failure (R-17). Trade-off: a transient error at startup keeps Admins on 401 for up to 30 s. With keys already cached, a failed refresh keeps the previous keys. | Owner, 2026-11-02 |
 
 ## 6. Tests
 
@@ -89,6 +91,7 @@ Spec 002 isolated leagues and left the identity port (`IIdentidadAutenticada`) s
 | T-11 | R-12, R-13 | Connected as `goalflow_app` under RLS: if the identity is not set in the transaction, a real Admin gets 403. Covered by the mutation of T-01 (identity not set → T-01 red). | — |
 | T-12 | R-06 | With a capturing logger, one request of each kind (200, 401, 403) writes no log entry that contains the token or the word `Bearer`. | A log line includes the `Authorization` header or the token. |
 | T-13 | R-16 | The test JWKS source throws on read. A valid-looking ES256 token on `/liga-a/admin/sesion` → 401; a log entry at warning or above records the failure and contains neither the token nor `Bearer`; `GET /liga-a/equipos` → 200. | The failure surfaces as 500, or the token appears in the log. |
+| T-15 | R-17 | With the test JWKS source failing and a short back-off (for example 2 s): 5 Admin requests inside the period → all 401, the source is read **once**, and exactly **one** warning is logged. After the period, the source works again and the next request → 200 after **one** new read. A third case: a forged, well-formed JWT (random `kid`, no valid signature) inside the period does not read the source. | The back-off is removed (5 reads), the warning is logged per request, or the back-off never expires (the request after the period stays 401). |
 | T-14 | R-12 | **Explicit user filter, without RLS:** the membership adapter runs with a superuser connection, so RLS does not apply. With tenant `liga-a` and the identity of a user with **no** membership there, it returns no role. | The adapter filters by league only and relies on RLS for the user (it then returns another Admin's role). |
 
 ## 7. Out of scope
