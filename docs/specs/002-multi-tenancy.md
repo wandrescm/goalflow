@@ -1,6 +1,6 @@
 # Spec 002: Multi-tenancy and data isolation between leagues
 
-- **Status:** Approved
+- **Status:** Implemented (2026-11-01; PR #7, merge commit `b423ff0`; closed on 2026-11-02)
 - **Date:** 2026-10-30 (revised the same day after the owner's review; amended on 2026-10-30 and 2026-10-31 after the implementation audit: T-11, T-13, T-18, R-29, R-30, rate-limit exception)
 - **Related:** ADR-14 (multi-tenancy), ADR-03 (modular monolith), ADR-05 (hosting, roles, migrations), Spec 001
 - **Effort:** Medium (default) for implementation; High for the RLS and transaction-interceptor parts
@@ -164,19 +164,50 @@ Canaries already present in this table: T-01, T-02, T-03 and T-10 are explicit c
 
 ## 8. Definition of done
 
-- [ ] All tests above pass and none was modified to make it pass.
-- [ ] Every requirement maps to at least one test (see validation table).
-- [ ] No new warnings; no secrets in the diff.
-- [ ] ADR-03 (§6 Tenancy, §7 `Ligas` row, §3 transitive Domain reference), ADR-05 (C-02) and `CLAUDE.md` updated in the same PR.
-- [ ] PR description contains the validation table with real results and the CI duration.
-- [ ] The migration script artifact was reviewed by the owner before being applied to production.
+- [x] All tests above pass and none was modified to make it pass. T-11, T-13, T-18 and T-23 changed only because this Spec changed their definition after the mutation audit (C-16, C-19), never to turn them green.
+- [x] Every requirement maps to at least one test (see validation table).
+- [x] No new warnings; no secrets in the diff.
+- [x] ADR-03 (§6 Tenancy, §7 `Ligas` row, §3 transitive Domain reference), ADR-05 (C-02) and `CLAUDE.md` updated in the same PR.
+- [x] PR description contains the validation table with real results and the CI duration.
+- [x] The migration script artifact was reviewed by the owner before being applied to production (2026-11-01).
 
-## 9. Validation (filled at PR time)
+## 9. Validation
+
+Filled at closing, after the production check. During review, the evidence lived in the description of PR #7.
+
+**Automated:** 71/71 tests on the merged code (`4b3d336`), against PostgreSQL 17 in a container. CI `build-test` 48 s (limit 10 min).
 
 | Requirement | Test | Result | Evidence |
 | --- | --- | --- | --- |
-| R-01 | T-01 | | |
-| … | … | | |
+| R-01 | T-01 | Pass | Rule plus canary fixture |
+| R-02 | T-02 | Pass | `Ligas → Tenancy` in the module table; canary: `Torneos` using a `Ligas` entity |
+| R-03 | T-03 | Pass | Canary fixture `DomainConEfCore` |
+| R-04 | T-05, T-09 | Pass | `Equipo` is the first isolated table |
+| R-05, R-06 | T-04 | Pass | 4 unit cases |
+| R-07, R-08 | T-05 | Pass | Mutation 1 (captured filter value): 9/60 red |
+| R-09 | T-06 | Pass | |
+| R-10 | T-07 | Pass | 2 cases |
+| R-11 | T-09, T-10 | Pass | T-10 canary: the superuser sees both leagues |
+| R-12, R-25 | T-17 | Pass | |
+| R-13 | T-12 | Pass | Same `pg_backend_pid()` in both variants; mutation 4 (`is_local = false`): 2/60 red |
+| R-14 | T-11 | Pass | 42501 plus a row-level security message |
+| R-15, R-17, R-18 | T-13 | Pass | 8 rejections inside a rolled-back transaction, plus 1 read; mutation B: exactly 8/69 red |
+| R-16 | T-14 | Pass | |
+| R-19, R-20 | T-15 | Pass | Also in production (below) |
+| R-21, R-22 | T-13, T-16 | Pass | Idempotent script published by CI and applied twice in a disposable container |
+| R-23 | T-18 | Pass | Event counter with a positive control; mutation 6: 1/60 red |
+| R-24 | T-08 | Pass | Mutation 3: `DbUpdateException` wrapping an RLS 42501 instead of the guard's exception |
+| R-26 | T-19 | Pass | |
+| R-27 | T-20 | Pass | |
+| R-28 | T-21 | Pass | |
+| R-29 | T-22 | Pass | 6 cases, each key on its own, `confdeltype = r`; mutation D: 2/69 red |
+| R-30 | T-23 | Pass | Built-in canary; mutation A (logger factory) survived and led to the redesign (C-19); mutation A' (memory cache): 3/71 full suite, 2/3 isolated |
+| R-31 | T-24 | Pass | Mutation 2 (singleton interceptor): 19/60 red, only in Development (reason for R-31); mutation C: 1/69 red |
+
+**Production (owner, 2026-11-01):**
+- The script was applied as `postgres`. Two migrations are recorded in the history; the 4 tables are owned by `postgres`, with RLS on `admins_liga` and `equipos`.
+- The release image, run locally against Supabase with `VerifyFull`: `/no-existe/equipos` → 404.
+- Render, `b423ff0` Live: `/liga-humo/equipos` gave 404 → 200 `[]` → 404 while a test league was inserted and then deleted. The old code would have answered 404 in all three requests, so this sequence tells the two versions apart.
 
 ## 10. Risks and open items
 
