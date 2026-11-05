@@ -1,7 +1,12 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\GoalFlow.Application\GoalFlow.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- BackgroundService, ValidateOnStart y BindConfiguration vienen del framework compartido, no de un paquete (Spec 004 §4). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,9 +1,12 @@
+using GoalFlow.Application.Mensajeria;
 using GoalFlow.Application.Tenancy;
 using GoalFlow.Domain.Ligas;
 using GoalFlow.Domain.Tenancy;
 using GoalFlow.Domain.Torneos;
+using GoalFlow.Infrastructure.Mensajeria;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Npgsql;
 
 namespace GoalFlow.Infrastructure.Persistencia;
 
@@ -15,6 +18,7 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
     public DbSet<Liga> Ligas => Set<Liga>();
     public DbSet<AdminLiga> AdminsLiga => Set<AdminLiga>();
     public DbSet<Equipo> Equipos => Set<Equipo>();
+    public DbSet<EntregaEvento> EntregasEventos => Set<EntregaEvento>();
 
     // El filtro referencia este miembro para evaluarse por consulta; EF Core cachea el modelo (ADR-14 §2.2).
     private TenantId TenantActual => tenantContext.Current;
@@ -58,7 +62,46 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
                 .HasConstraintName("fk_equipos_ligas").OnDelete(DeleteBehavior.Restrict);
             equipo.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
         });
+
+        modelBuilder.Entity<EntregaEvento>(entrega =>
+        {
+            ConfiguracionDeEntregaEvento.Configurar(entrega);
+            entrega.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
     }
+
+    // Traduce solo el 23505 del índice de la clave lógica (Spec 004 R-09). SaveChanges() y SaveChangesAsync(ct)
+    // llaman a estas sobrecargas. No se desactiva AutoSavepointsEnabled: la transacción debe seguir usable.
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        try
+        {
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+        catch (DbUpdateException ex) when (EsClaveLogicaDuplicada(ex))
+        {
+            throw new EntregaDuplicadaException(ex);
+        }
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        catch (DbUpdateException ex) when (EsClaveLogicaDuplicada(ex))
+        {
+            throw new EntregaDuplicadaException(ex);
+        }
+    }
+
+    private static bool EsClaveLogicaDuplicada(DbUpdateException ex) =>
+        ex.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: ConfiguracionDeEntregaEvento.IndiceDeClaveLogica,
+        };
 
     private static void ColumnaDeTenant(PropertyBuilder<TenantId> propiedad, string columna) =>
         propiedad.HasColumnName(columna).HasConversion(t => t.Value, v => new TenantId(v)).ValueGeneratedNever();

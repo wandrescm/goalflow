@@ -94,6 +94,90 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
                     b.ToTable("equipos", "goalflow");
                 });
 
+            modelBuilder.Entity("GoalFlow.Infrastructure.Mensajeria.EntregaEvento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgregadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agregado_id");
+
+                    b.Property<DateTime?>("CompletadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completado_en");
+
+                    b.Property<string>("Consumidor")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("consumidor");
+
+                    b.Property<DateTime>("CreadoEn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creado_en")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("estado");
+
+                    b.Property<Guid>("EventoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("evento_id");
+
+                    b.Property<int>("Intentos")
+                        .HasColumnType("integer")
+                        .HasColumnName("intentos");
+
+                    b.Property<DateTime?>("LeaseVenceEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_vence_en");
+
+                    b.Property<DateTime>("ProximoIntentoEn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("proximo_intento_en")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TipoDeEvento")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("tipo_de_evento");
+
+                    b.Property<Guid?>("TokenDelLease")
+                        .HasColumnType("uuid")
+                        .HasColumnName("token_del_lease");
+
+                    b.Property<string>("UltimoError")
+                        .HasColumnType("text")
+                        .HasColumnName("ultimo_error");
+
+                    b.Property<int>("VersionDelAgregado")
+                        .HasColumnType("integer")
+                        .HasColumnName("version_del_agregado");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Estado", "LeaseVenceEn")
+                        .HasDatabaseName("ix_entregas_eventos_leases");
+
+                    b.HasIndex("TenantId", "Estado", "ProximoIntentoEn")
+                        .HasDatabaseName("ix_entregas_eventos_pendientes");
+
+                    b.HasIndex("TenantId", "TipoDeEvento", "AgregadoId", "VersionDelAgregado", "Consumidor")
+                        .IsUnique()
+                        .HasDatabaseName("ux_entregas_eventos_clave_logica");
+
+                    b.ToTable("entregas_eventos", "goalflow");
+                });
+
             modelBuilder.Entity("GoalFlow.Domain.Ligas.AdminLiga", b =>
                 {
                     b.HasOne("GoalFlow.Domain.Ligas.Liga", null)
@@ -112,6 +196,16 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_equipos_ligas");
+                });
+
+            modelBuilder.Entity("GoalFlow.Infrastructure.Mensajeria.EntregaEvento", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Ligas.Liga", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_entregas_eventos_ligas");
                 });
 #pragma warning restore 612, 618
         }
