@@ -293,6 +293,85 @@ public class ReclamacionTests(BaseDeAislamiento db, ITestOutputHelper salida)
         Assert.Equal("Completada", Assert.Single(await db.LeerEntregas(e.A.Nombre)).Estado);
     }
 
+    /// <summary>
+    /// A reclama y confirma; al vencer el lease según la base, B lee la candidata (EnProceso, intentos 1).
+    /// Devuelve la reclamación de A y la candidata vieja de B.
+    /// </summary>
+    private async Task<(EntregaReclamada DeA, EntregaCandidata CandidataDeB)> ReclamoDeAYCandidataVencidaDeB(Escenario e)
+    {
+        var deA = await ReclamarYConfirmar(e);
+        Assert.NotNull(deA);
+
+        EntregaCandidata? candidata = null;
+        await Esperar(async () =>
+        {
+            await using var lector = await Trabajador.IniciarAsync(e.Servicios, LigaA);
+            candidata = (await lector.Operaciones.ListarCandidatasAsync(Ct)).SingleOrDefault(c => c.Id == e.Fila.Id);
+            return candidata is not null;
+        }, "el lease de A vence según el reloj de la base");
+
+        var fila = Assert.Single(await db.LeerEntregas(e.A.Nombre));
+        Assert.Equal("EnProceso", fila.Estado);
+        Assert.Equal(1, fila.Intentos);
+        Assert.Equal(1, candidata!.Intentos);
+        return (deA, candidata);
+    }
+
+    private async Task<DateTime> AhoraDeLaBase()
+    {
+        await using var conexion = new NpgsqlConnection(db.CadenaSuperusuario);
+        await conexion.OpenAsync();
+        await using var comando = new NpgsqlCommand("select now()", conexion);
+        return (DateTime)(await comando.ExecuteScalarAsync())!;
+    }
+
+    [Fact]
+    public async Task T36_una_candidata_vieja_no_revive_una_entrega_completada()
+    {
+        await using var e = await Preparar(LeaseCorto);
+        var (deA, candidataDeB) = await ReclamoDeAYCandidataVencidaDeB(e);
+
+        // El dueño anterior completa; nadie le quitó el token, y sus intentos no cambian.
+        await using (var a = await Trabajador.IniciarAsync(e.Servicios, LigaA))
+        {
+            Assert.True(await a.Operaciones.CompletarAsync(deA, Ct));
+            await a.ConfirmarAsync();
+        }
+
+        await using (var b = await Trabajador.IniciarAsync(e.Servicios, LigaA))
+            Assert.Null(await b.Operaciones.ReclamarAsync(candidataDeB, Ct));
+
+        var fila = Assert.Single(await db.LeerEntregas(e.A.Nombre));
+        Assert.Equal("Completada", fila.Estado);
+        Assert.Equal(1, fila.Intentos);
+        Assert.Equal(deA.Token, fila.Token);
+    }
+
+    [Fact]
+    public async Task T36_una_candidata_vieja_no_ignora_el_backoff_de_un_reintento()
+    {
+        await using var e = await Preparar(o =>
+        {
+            LeaseCorto(o);
+            o.BackoffInicial = TimeSpan.FromSeconds(60);
+        });
+        var (deA, candidataDeB) = await ReclamoDeAYCandidataVencidaDeB(e);
+
+        await using (var a = await Trabajador.IniciarAsync(e.Servicios, LigaA))
+        {
+            Assert.True(await a.Operaciones.ReintentarAsync(deA, "InvalidOperationException", Ct));
+            await a.ConfirmarAsync();
+        }
+
+        await using (var b = await Trabajador.IniciarAsync(e.Servicios, LigaA))
+            Assert.Null(await b.Operaciones.ReclamarAsync(candidataDeB, Ct));
+
+        var fila = Assert.Single(await db.LeerEntregas(e.A.Nombre));
+        Assert.Equal("Pendiente", fila.Estado);
+        Assert.Equal(1, fila.Intentos);
+        Assert.True(fila.ProximoIntentoEn > await AhoraDeLaBase());
+    }
+
     [Fact]
     public async Task R22_la_lectura_de_candidatas_respeta_el_tope_de_lote()
     {
