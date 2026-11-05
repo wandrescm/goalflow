@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-08 (S2D1)
 - **Related:** ADR-07 (runtime), ADR-02 (post-save pipeline), ADR-14 (multi-tenancy)
-- **Amended:** 2026-10-30 (`Ligas` module, Tenancy content, transitive Domain reference); 2026-11-04 (shared namespace `Mensajeria`, with ADR-02)
+- **Amended:** 2026-10-30 (`Ligas` module, Tenancy content, transitive Domain reference); 2026-11-04 (shared namespace `Mensajeria`, with ADR-02); 2026-11-05 (Infrastructure and the ASP.NET Core shared framework)
 
 Translated from Spanish on 2026-10-11; the decision is unchanged. Amended on 2026-10-30 together with ADR-14, and on 2026-11-04 together with ADR-02; the amendments are listed in the "Amendments" section.
 
@@ -26,6 +26,7 @@ GoalFlow is built and operated by a single person and deployed as a single proce
 5. **Allowed external dependencies:**
    - Domain: none (no EF Core, no ASP.NET, no `Microsoft.Extensions.*`).
    - Application: only Domain and `Microsoft.Extensions.*.Abstractions` (for example `ILogger`).
+   - Infrastructure: may reference the ASP.NET Core shared framework (`Microsoft.AspNetCore.App`) **only** to reach the generic host and options types, such as `BackgroundService`, `ValidateOnStart` and `BindConfiguration` (ADR-02). It must not use any type from a `Microsoft.AspNetCore` namespace: HTTP belongs to Api. An architecture test with a canary checks it.
 6. **Communication between modules by events.** The emitting module (for example Torneos with `PartidoGuardado`) publishes the event to a port and does not know its consumers. The event carries identifiers (`TenantId`, `PartidoId`, version) and not match data: the consumer re-reads the current state, so a correction or a retry never processes stale data. A module may depend on another only through its `.Contracts` sub-namespace (events, read DTOs), never on its entities.
 Exception: Tenancy is the shared kernel and may be used whole. It contains only the `TenantId` value (Domain) and the `ITenantContext` port (Application), plus the exception thrown when the tenant is missing, and it must not grow any further. League data (catalog, Admin membership) lives in the `Ligas` module (ADR-14 §2.8).
 7. **Allowed module graph (each new row requires updating this ADR):**
@@ -77,3 +78,5 @@ Architecture tests in `GoalFlow.Tests/Architecture`: rules for references betwee
   - §7 lists the shared namespaces `Hosting` and `Persistencia`, which are not modules.
 - **2026-11-04 (with ADR-02):**
   - §7 adds the shared namespace `Mensajeria` and states that shared namespaces hold only cross-cutting mechanics and are not a route to couple modules.
+- **2026-11-05 (with Spec 004):**
+  - §5 allows Infrastructure to reference the ASP.NET Core shared framework for the generic host and options types only, and forbids `Microsoft.AspNetCore` types there. Raised by Claude Code during the implementation of Spec 004 and approved by the owner as option (a), with a rule and a canary.

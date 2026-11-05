@@ -1,7 +1,7 @@
 # Spec 004: Post-save pipeline (durable outbox)
 
 - **Status:** Draft
-- **Date:** 2026-11-04 (revised twice the same day after the owner's reviews: R-05, R-09, R-10, R-12, R-14, R-23, R-26, R-32, R-44, R-45; T-01, T-04, T-09, T-12, T-13, T-23, T-25, T-31 to T-35; C-10 to C-16)
+- **Date:** 2026-11-04 (revised twice the same day after the owner's reviews: R-05, R-09, R-10, R-12, R-14, R-23, R-26, R-32, R-44, R-45; T-01, T-04, T-09, T-12, T-13, T-23, T-25, T-31 to T-35; C-10 to C-16). Revised on 2026-11-05 after the mutation audit: R-24, R-46; T-36, T-37; C-17 to C-19; M16, M17.
 - **Related:** ADR-02 (post-save pipeline), ADR-03 (amended §7: `Mensajeria`), ADR-14 (amended §2.3: tenant enumeration), ADR-05 (C-03 connection budget, R-11), Spec 002
 - **Effort:** High for the claim, lease and loop (`opusplan`); medium for the rest
 
@@ -65,7 +65,7 @@ A delivery committed with its producer's transaction is completed exactly once b
 | --- | --- |
 | R-22 | The loop shall claim deliveries in a short explicit transaction opened through the unit-of-work port, with no consumer work inside it. It reads at most `Mensajeria:LotePorTenant` (10) candidates and claims each one with an `ExecuteUpdateAsync` conditioned on availability. |
 | R-23 | A delivery shall be available when its consumer is registered in the running host **and** it is either `Pendiente` with next attempt time `<=` now, or `EnProceso` with lease expiry `<` now. |
-| R-24 | A successful claim shall, in the same statement, set `EnProceso`, a new lease token, lease expiry = now + `Mensajeria:DuracionDelLease` (5 min) and attempts = attempts + 1. It succeeds only when the statement affected exactly one row. |
+| R-24 | A successful claim shall, in the same statement, set `EnProceso`, a new lease token, lease expiry = now + `Mensajeria:DuracionDelLease` (5 min) and attempts = attempts + 1. Its condition shall include both the availability of R-23 and the attempts read with the candidate, which must be unchanged and below the maximum. It succeeds only when the statement affected exactly one row. |
 | R-25 | If two workers try to claim the same available delivery at the same time, then exactly one shall succeed. |
 | R-26 | Every timestamp on `entregas_eventos` (availability comparisons, lease expiry, next attempt time, completion time) shall be computed by the database clock: `DateTime.UtcNow` inside the LINQ expression, translated by Npgsql to `now()`. Creation time shall come from a column default of `now()`. The application may send durations as parameters, never a timestamp. |
 | R-27 | If a claim, completion or failure statement on `entregas_eventos` is attempted while no transaction is active, then the adapter shall throw `TransaccionRequeridaException` before sending any statement. |
@@ -91,6 +91,7 @@ A delivery committed with its producer's transaction is completed exactly once b
 | R-37 | If two registered consumers share a name, then the API shall fail to start. |
 | R-38 | If `TimeoutDelConsumidor` is not shorter than `DuracionDelLease`, or any `Mensajeria` value is not positive, then the API shall fail to start. |
 | R-45 | A delivery whose consumer is not registered in the running host shall not be claimed, failed or changed by that host. |
+| R-46 | No type in `GoalFlow.Infrastructure` shall depend on a `Microsoft.AspNetCore` namespace, even though the project references the ASP.NET Core shared framework (ADR-03 §5). |
 
 ### 3.8 Architecture rules
 
@@ -111,7 +112,7 @@ A delivery committed with its producer's transaction is completed exactly once b
 
 - **No new raw SQL in production code.** Claims, completions and failures use `ExecuteUpdateAsync`; the only new raw SQL is the policy and grants inside the migration (ADR-14 C-10). Tests of R-11, R-12 and R-41 may use raw SQL against the disposable database.
 - **Real database:** tests of persistence, claims and isolation run against PostgreSQL 17 in the existing container, connected as `goalflow_app`. Concurrency tests use two independent scopes, `DbContext` instances, connections and transactions.
-- **Configuration keys** under `Mensajeria:` with the values of ADR-02 §2.8; tests use short values (for example a 2 s lease and a 1 s period).
+- **Configuration keys** under `Mensajeria:` with the values of ADR-02 §2.8, as `TimeSpan` for durations, including `BackoffInicial` (30 s) and `BackoffMaximo` (30 min); tests use short values (for example a 2 s lease and a 1 s period).
 - **No new packages.** `System.Threading.Channels` and the hosting abstractions are part of the shared framework; no Polly (ADR-02 C-08).
 - **Test doubles:** the test event and consumers live only in `GoalFlow.Tests`. No production fake event, no football entity and no endpoint are added.
 - **Timing in tests:** waits use polling with a timeout (at most 30 s per test), never fixed sleeps as assertions. The CI job stays under 10 minutes; the measured duration is reported in the PR.
@@ -137,6 +138,10 @@ A delivery committed with its producer's transaction is completed exactly once b
 | C-14 | Which clock sets the next attempt time? | The database clock; the application sends only the backoff duration (ADR-02 C-22). | Owner, 2026-11-04 (second review) |
 | C-15 | How is "one connection at a time" (R-17) proven? | T-34: a connection interceptor tracks the maximum number of connections open at once across scopes, and a run with `Maximum Pool Size = 1` must complete. Any overlap (for example, the consumer running while the claim connection is still held) times out. | Owner and mentor, 2026-11-04 (second review) |
 | C-16 | Why must a host ignore deliveries of consumers it does not know? | During a deploy, the old instance would otherwise fail the rows of a consumer added by the new version; in tests, a host would claim rows left by other tests (ADR-02 C-23). | Mentor, 2026-11-04 |
+| C-17 | Does the claim compare the attempts read? | Yes (R-24, ADR-02 C-25); proposed by Claude Code during implementation. | Owner, 2026-11-05 (audit) |
+| C-18 | Is the availability condition in the `UPDATE` redundant with the attempts check? | No. M1 was caught only by T-09, through a helper that re-reads the row. T-36 covers the real case: a stale candidate after its previous owner completes or retries (ADR-02 C-26). | Owner, 2026-11-05 (audit) |
+| C-19 | Infrastructure references the ASP.NET Core shared framework. Is that allowed? | Yes, for host and options types only; R-46 and T-37 forbid `Microsoft.AspNetCore` types (ADR-03 §5). | Owner, 2026-11-05, option (a) |
+| C-20 | Why did M15 turn tests outside T-35 red? | Tests share one container, and `goalflow_app` cannot delete rows, so rows from earlier tests remain. Isolation between tests relies on unique consumer names **and** on R-45. Without the filter, a test's oldest-first batch of 10 fills with other tests' rows, and claiming an unknown consumer's row aborts the pass. That is detection, not flakiness, but a failure of R-45 shows up in unrelated tests. | Mentor, 2026-11-05 (audit) |
 | C-13 | Who sends the hint? | A transaction interceptor after the commit (ADR-02 C-20); T-32 pins the moment. | Owner and mentor, 2026-11-04 (review) |
 
 ## 6. Tests
@@ -178,6 +183,8 @@ A delivery committed with its producer's transaction is completed exactly once b
 | T-33 | R-44 | The tenant-source port is replaced by a test double that throws on its first call and works afterwards, with a 1 s timer period. The host is still running after the first pass; a `Warning` with the exception type is logged; a delivery is completed on a later pass. | An exception escapes `ExecuteAsync` (the host stops, by .NET's default `StopHost` behaviour). |
 | T-34 | R-17, R-29 | Two tenants with two deliveries each, and a test consumer that reads `Equipo` through its own unit of work. (1) A connection interceptor that counts opens and closes across all scopes records a maximum of **1** connection open at once. (2) The same run with `Maximum Pool Size = 1` and a 5 s connection timeout completes all four deliveries. | The consumer runs while the claim's connection or transaction is still open, or tenants are processed in parallel (case 2 times out). |
 | T-35 | R-45, R-23 | A delivery for consumer `no-registrado` and one for a registered consumer, both available: the pass completes only the registered one; the other stays `Pendiente` with attempts 0, even after several passes. | The claim does not filter by registered consumer names (the unknown row is claimed and failed, or retried). |
+| T-36 | R-23, R-24 | Stale candidate (C-18). Worker A claims with a 2 s lease and commits. After the lease expires, worker B reads the candidate (attempts 1). Before B claims: (a) A completes with its token, so the row is `Completada`; then B's claim affects zero rows and the row stays `Completada`. (b) In a second case, A retries with its token and a 60 s backoff, so the row is `Pendiente` with a future next attempt time; then B's claim affects zero rows and attempts stay 1. | The availability condition is removed from the claim's `UPDATE` (M1): B revives a completed delivery or ignores the backoff. |
+| T-37 | R-46 | Architecture rule: no type in `GoalFlow.Infrastructure` depends on `Microsoft.AspNetCore`. Canary: a fixture type that uses `Microsoft.AspNetCore.Http.HttpContext` fails the rule. | The rule checks references between projects instead of types, or ignores the shared framework. |
 
 **Canaries in this table:** T-25 to T-29 have explicit canary fixtures; T-22 and T-27 distinguish their failure causes; T-23 proves its log capture is real.
 
@@ -197,7 +204,9 @@ A delivery committed with its producer's transaction is completed exactly once b
 - M12: store the exception message, truncated to 500 characters, in the last-error column.
 - M13: run each consumer before committing the claim transaction.
 - M14: let exceptions escape the loop (remove the catch around a pass).
-- M15: remove the registered-consumer condition from the claim.
+- M15: remove the registered-consumer condition from the claim (and from the candidate listing, so that it is not masked).
+- M16 (after the audit): M1 again, to show that T-36 now detects it.
+- M17 (after the audit): a type in `GoalFlow.Infrastructure` that uses `HttpContext`, to show that T-37 detects it.
 
 ## 7. Out of scope
 
@@ -211,8 +220,8 @@ A delivery committed with its producer's transaction is completed exactly once b
 ## 8. Definition of done
 
 - [ ] All tests above pass and none was modified to make it pass.
-- [ ] Every requirement (R-01 to R-45) maps to at least one test or to the production check (R-43).
-- [ ] Mutations M1–M15 run by the owner, with predictions and results in the PR.
+- [ ] Every requirement (R-01 to R-46) maps to at least one test or to the production check (R-43).
+- [ ] Mutations M1–M17 run, with the owner's predictions frozen beforehand and results in the PR.
 - [ ] ADR-02 committed; ADR-03 §7 and ADR-14 §2.3 and C-12 amended in the same PR.
 - [ ] Migration script generated by CI as an artifact; it contains the policy and the grants.
 - [ ] No new warnings; no secrets in the diff; no new raw SQL outside the migration.
