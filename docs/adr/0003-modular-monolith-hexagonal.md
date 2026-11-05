@@ -2,10 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-08 (S2D1)
-- **Related:** ADR-07 (runtime), ADR-02 (post-save pipeline, pending), ADR-14 (multi-tenancy)
-- **Amended:** 2026-10-30 (`Ligas` module, Tenancy content, transitive Domain reference)
+- **Related:** ADR-07 (runtime), ADR-02 (post-save pipeline), ADR-14 (multi-tenancy)
+- **Amended:** 2026-10-30 (`Ligas` module, Tenancy content, transitive Domain reference); 2026-11-04 (shared namespace `Mensajeria`, with ADR-02); 2026-11-05 (Infrastructure and the ASP.NET Core shared framework)
 
-Translated from Spanish on 2026-10-11; the decision is unchanged. Amended on 2026-10-30 together with ADR-14; the amendments are listed in the "Amendments" section.
+Translated from Spanish on 2026-10-11; the decision is unchanged. Amended on 2026-10-30 together with ADR-14, and on 2026-11-04 together with ADR-02; the amendments are listed in the "Amendments" section.
 
 ## Context
 
@@ -26,6 +26,7 @@ GoalFlow is built and operated by a single person and deployed as a single proce
 5. **Allowed external dependencies:**
    - Domain: none (no EF Core, no ASP.NET, no `Microsoft.Extensions.*`).
    - Application: only Domain and `Microsoft.Extensions.*.Abstractions` (for example `ILogger`).
+   - Infrastructure: may reference the ASP.NET Core shared framework (`Microsoft.AspNetCore.App`) **only** to reach the generic host and options types, such as `BackgroundService`, `ValidateOnStart` and `BindConfiguration` (ADR-02). It must not use any type from a `Microsoft.AspNetCore` namespace: HTTP belongs to Api. An architecture test with a canary checks it.
 6. **Communication between modules by events.** The emitting module (for example Torneos with `PartidoGuardado`) publishes the event to a port and does not know its consumers. The event carries identifiers (`TenantId`, `PartidoId`, version) and not match data: the consumer re-reads the current state, so a correction or a retry never processes stale data. A module may depend on another only through its `.Contracts` sub-namespace (events, read DTOs), never on its entities.
 Exception: Tenancy is the shared kernel and may be used whole. It contains only the `TenantId` value (Domain) and the `ITenantContext` port (Application), plus the exception thrown when the tenant is missing, and it must not grow any further. League data (catalog, Admin membership) lives in the `Ligas` module (ADR-14 §2.8).
 7. **Allowed module graph (each new row requires updating this ADR):**
@@ -41,7 +42,12 @@ Exception: Tenancy is the shared kernel and may be used whole. It contains only 
 
    An entry "X.Contracts" allows only that sub-namespace; an entry "X" (only Tenancy) allows the whole module.
 
-   **Shared namespaces that are not modules:** `Hosting` (Api composition: endpoints, middleware, configuration) and `Persistencia` (the unit-of-work port in Application; the `DbContext`, interceptors and migrations in Infrastructure, ADR-14 §2.3). They are not evaluated as modules, and any module may use them. Adding another shared namespace requires updating this list and `TablaDeModulos.NamespacesCompartidos` in the same commit.
+   **Shared namespaces that are not modules:**
+   - `Hosting`: Api composition (endpoints, middleware, configuration).
+   - `Persistencia`: the unit-of-work port in Application; the `DbContext`, interceptors and migrations in Infrastructure (ADR-14 §2.3).
+   - `Mensajeria`: reliable delivery of integration events (ADR-02). In Application: the publishing port, the event and consumer contracts and the tenant-source port. In Infrastructure: the delivery table mapping, the publishing adapter, the channel and the processing loop.
+
+   They are not evaluated as modules, and any module may use them. A shared namespace holds only cross-cutting mechanics, never business rules; business modules still reach each other only through `.Contracts`, and `Mensajeria` is not a route around that rule. Event types live in the emitting module's `.Contracts`. Adding another shared namespace requires updating this list and `TablaDeModulos.NamespacesCompartidos` in the same commit.
 
 8. **Tenant context.** The abstraction for the current tenant is a port in Application. The `TenantId` is data of the message or command and never ambient thread state: each background job creates its own DI scope and sets the tenant from the message (the pipeline has no `HttpContext`).
 9. **A single process with bounded memory.** Every in-memory queue is bounded (`Channel` with a maximum capacity and a wait policy) and every in-memory cache has a `SizeLimit`. The LLM provider is remote: it does not consume model memory, but it does use buffers for responses.
@@ -70,3 +76,7 @@ Architecture tests in `GoalFlow.Tests/Architecture`: rules for references betwee
   - Tenancy reviewed: it holds only `TenantId`, `ITenantContext` and the missing-tenant exception (§6).
   - §3 states that Infrastructure and Api reach Domain through the transitive reference of Application.
   - §7 lists the shared namespaces `Hosting` and `Persistencia`, which are not modules.
+- **2026-11-04 (with ADR-02):**
+  - §7 adds the shared namespace `Mensajeria` and states that shared namespaces hold only cross-cutting mechanics and are not a route to couple modules.
+- **2026-11-05 (with Spec 004):**
+  - §5 allows Infrastructure to reference the ASP.NET Core shared framework for the generic host and options types only, and forbids `Microsoft.AspNetCore` types there. Raised by Claude Code during the implementation of Spec 004 and approved by the owner as option (a), with a rule and a canary.

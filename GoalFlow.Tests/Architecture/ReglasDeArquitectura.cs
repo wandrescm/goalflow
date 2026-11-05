@@ -1,6 +1,12 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using GoalFlow.Application.Mensajeria;
+using GoalFlow.Domain.Tenancy;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NetArchTest.Rules;
 
 namespace GoalFlow.Tests.Architecture;
@@ -129,6 +135,85 @@ public static class ReglasDeArquitectura
             .Select(t => $"{t.FullName} no pertenece a Tenancy")
             .ToList();
         return ResultadoRegla.Desde(violaciones);
+    }
+
+    // ---- Pipeline post-guardado (Spec 004) ----
+
+    /// <summary>
+    /// Spec 004 R-46 (T-37 a): el ensamblado no referencia ninguno cuyo nombre empiece por Microsoft.AspNetCore.
+    /// El compilador solo emite referencias a ensamblados usados, así que esto vale sea cual sea el namespace del tipo.
+    /// </summary>
+    public static ResultadoRegla SinReferenciasAAspNetCore(Assembly ensamblado) =>
+        ReferenciasPermitidas(ensamblado, n => !n.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal));
+
+    /// <summary>Spec 004 R-46 (T-37): Infrastructure referencia el framework compartido de ASP.NET Core, pero ningún tipo suyo lo usa.</summary>
+    public static ResultadoRegla InfrastructureSinAspNetCore(PredicateList tipos) =>
+        SinDependenciasDe(tipos, "Microsoft.AspNetCore");
+
+    private static readonly (string Nombre, Type Tipo)[] PropiedadesDeEvento =
+        [("AgregadoId", typeof(Guid)), ("TenantId", typeof(TenantId)), ("Version", typeof(int))];
+
+    /// <summary>
+    /// Spec 004 R-39 (T-25): todo evento tiene exactamente las propiedades públicas del contrato, con sus tipos,
+    /// y vive en el sub-namespace .Contracts de un módulo.
+    /// </summary>
+    public static ResultadoRegla ContratosDeEventos(IEnumerable<Type> tipos, IReadOnlyCollection<string> raices)
+    {
+        var violaciones = new List<string>();
+        var eventos = tipos.Where(t => !t.IsInterface && !t.IsAbstract && typeof(IEventoDeIntegracion).IsAssignableFrom(t));
+
+        foreach (var evento in eventos)
+        {
+            var propiedades = evento.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Select(p => (p.Name, Tipo: p.PropertyType))
+                .OrderBy(p => p.Name, StringComparer.Ordinal)
+                .ToList();
+
+            if (!propiedades.SequenceEqual(PropiedadesDeEvento))
+                violaciones.Add($"{evento.FullName}: sus propiedades públicas ({string.Join(", ", propiedades.Select(p => $"{p.Tipo.Name} {p.Name}"))}) " +
+                    "no son exactamente AgregadoId (Guid), TenantId y Version (int)");
+
+            if (ModuloDe(evento, raices) is not { EsContracts: true })
+                violaciones.Add($"{evento.FullName}: un evento debe vivir en el sub-namespace .Contracts de un módulo");
+        }
+
+        return ResultadoRegla.Desde(violaciones);
+    }
+
+    /// <summary>Spec 004 R-40 (T-26): toda entidad del modelo con TenantId tiene el filtro con nombre Tenant.</summary>
+    public static ResultadoRegla EntidadesConTenantTienenFiltro(IModel modelo, IReadOnlyCollection<string> excepciones)
+    {
+        var violaciones = modelo.GetEntityTypes()
+            .Where(e => e.FindProperty("TenantId") is not null)
+            .Where(e => !excepciones.Contains(e.ClrType.Name))
+            .Where(e => e.FindDeclaredQueryFilter("Tenant") is null)
+            .Select(e => $"{e.ClrType.Name} tiene TenantId y no tiene el filtro Tenant")
+            .ToList();
+        return ResultadoRegla.Desde(violaciones);
+    }
+
+    public sealed record FilaDeCatalogo(string Tabla, bool RlsActivo, long Politicas);
+
+    /// <summary>Spec 004 R-41 (T-27): toda tabla con tenant_id tiene RLS y al menos una política.</summary>
+    public static ResultadoRegla TablasConTenantTienenRls(IEnumerable<FilaDeCatalogo> tablas)
+    {
+        var violaciones = new List<string>();
+        foreach (var tabla in tablas)
+        {
+            if (!tabla.RlsActivo) violaciones.Add($"{tabla.Tabla} tiene tenant_id y no tiene RLS");
+            else if (tabla.Politicas == 0) violaciones.Add($"{tabla.Tabla} tiene RLS pero ninguna política");
+        }
+
+        return ResultadoRegla.Desde(violaciones);
+    }
+
+    /// <summary>Spec 004 R-42 (T-28): una caché de aplicación registrada exige un SizeLimit explícito.</summary>
+    public static ResultadoRegla CachesConLimite(IServiceCollection registros, IServiceProvider proveedor)
+    {
+        if (!registros.Any(d => d.ServiceType == typeof(IMemoryCache))) return ResultadoRegla.Desde([]);
+
+        var limite = proveedor.GetRequiredService<IOptions<MemoryCacheOptions>>().Value.SizeLimit;
+        return ResultadoRegla.Desde(limite is null ? ["IMemoryCache está registrada sin SizeLimit"] : []);
     }
 
     // ---- Auxiliares ----

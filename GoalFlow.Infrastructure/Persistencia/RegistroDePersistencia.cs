@@ -1,4 +1,6 @@
 using GoalFlow.Application.Ligas;
+using GoalFlow.Application.Mensajeria;
+using GoalFlow.Infrastructure.Mensajeria;
 using GoalFlow.Application.Persistencia;
 using GoalFlow.Application.Tenancy;
 using GoalFlow.Application.Torneos;
@@ -32,6 +34,11 @@ public static class RegistroDePersistencia
         services.AddScoped<ConsultaDeMembresia>();
         services.AddScoped<ILectorDeEquipos, LectorDeEquipos>();
         services.AddScoped<ConsultaDeEquipos>();
+        services.AddScoped<IFuenteDeTenants, FuenteDeTenants>();
+
+        // El DbContext lleva el interceptor de avisos: las piezas de Mensajeria que necesita se registran aquí
+        // (idempotente; el ciclo en segundo plano lo agrega AddGoalFlowMensajeria).
+        services.AddNucleoDeMensajeria();
 
         services.AddDbContext<GoalFlowDbContext>((proveedor, opciones) =>
         {
@@ -42,7 +49,8 @@ public static class RegistroDePersistencia
             opciones.ConfigureWarnings(w => w.Throw(CoreEventId.ManyServiceProvidersCreatedWarning));
             opciones.AddInterceptors(
                 proveedor.GetRequiredService<InterceptorDeTransacciones>(),
-                proveedor.GetRequiredService<InterceptorDeGuardado>());
+                proveedor.GetRequiredService<InterceptorDeGuardado>(),
+                proveedor.GetRequiredService<InterceptorDeAvisos>());
         });
 
         return services;

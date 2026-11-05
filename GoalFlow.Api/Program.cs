@@ -1,4 +1,5 @@
 using GoalFlow.Api.Hosting;
+using GoalFlow.Infrastructure.Mensajeria;
 using GoalFlow.Infrastructure.Persistencia;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +21,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 builder.Services.AddGoalFlowForwardedHeaders();
 builder.Services.AddGoalFlowCors();
 builder.Services.AddGoalFlowPersistencia();
+builder.Services.AddGoalFlowMensajeria();
 builder.Services.AddGoalFlowAutenticacion();
 
 var app = builder.Build();

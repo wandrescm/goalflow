@@ -14,8 +14,8 @@ public static class TablaDeModulos
             ["IA"] = ["Tenancy", "Torneos.Contracts", "Estadisticas.Contracts"],
         };
 
-    /// <summary>Namespaces de capa que no son módulos: composición (Hosting) y persistencia compartida (ADR-14 §2.3).</summary>
-    public static readonly IReadOnlyCollection<string> NamespacesCompartidos = ["Hosting", "Persistencia"];
+    /// <summary>Namespaces de capa que no son módulos: composición (Hosting), persistencia compartida (ADR-14 §2.3) y entrega de eventos (Mensajeria, ADR-02).</summary>
+    public static readonly IReadOnlyCollection<string> NamespacesCompartidos = ["Hosting", "Persistencia", "Mensajeria"];
 
     public static readonly IReadOnlyCollection<string> RaicesDeCapa =
     [
