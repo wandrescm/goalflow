@@ -1,7 +1,7 @@
 # Spec 004: Post-save pipeline (durable outbox)
 
 - **Status:** Draft
-- **Date:** 2026-11-04 (revised twice the same day after the owner's reviews: R-05, R-09, R-10, R-12, R-14, R-23, R-26, R-32, R-44, R-45; T-01, T-04, T-09, T-12, T-13, T-23, T-25, T-31 to T-35; C-10 to C-16). Revised on 2026-11-05 after the mutation audit: R-24, R-46; T-36, T-37; C-17 to C-19; M16, M17.
+- **Date:** 2026-11-04 (revised twice the same day after the owner's reviews: R-05, R-09, R-10, R-12, R-14, R-23, R-26, R-32, R-44, R-45; T-01, T-04, T-09, T-12, T-13, T-23, T-25, T-31 to T-35; C-10 to C-16). Revised on 2026-11-05 after the mutation audit: R-24, R-46; T-36, T-37; C-17 to C-21; M16, M17.
 - **Related:** ADR-02 (post-save pipeline), ADR-03 (amended §7: `Mensajeria`), ADR-14 (amended §2.3: tenant enumeration), ADR-05 (C-03 connection budget, R-11), Spec 002
 - **Effort:** High for the claim, lease and loop (`opusplan`); medium for the rest
 
@@ -141,6 +141,7 @@ A delivery committed with its producer's transaction is completed exactly once b
 | C-17 | Does the claim compare the attempts read? | Yes (R-24, ADR-02 C-25); proposed by Claude Code during implementation. | Owner, 2026-11-05 (audit) |
 | C-18 | Is the availability condition in the `UPDATE` redundant with the attempts check? | No. M1 was caught only by T-09, through a helper that re-reads the row. T-36 covers the real case: a stale candidate after its previous owner completes or retries (ADR-02 C-26). | Owner, 2026-11-05 (audit) |
 | C-19 | Infrastructure references the ASP.NET Core shared framework. Is that allowed? | Yes, for host and options types only; R-46 and T-37 forbid `Microsoft.AspNetCore` types (ADR-03 §5). | Owner, 2026-11-05, option (a) |
+| C-21 | Why did M17 survive the first version of T-37? | The mutant type had no namespace, and the rule selected types with `ResideInNamespaceStartingWith("GoalFlow")`, copied from the Domain rule. A rule's selection is part of the rule: a filter can exclude exactly the violation. T-37 now checks assembly references, which do not depend on namespaces, and all types. T-02, T-04 and T-05 have the same filter, but each is backed by a check that does not depend on it: T-01 and T-03 check assembly references, and a reference from Infrastructure to Api would be a project cycle. | Mentor and owner, 2026-11-05 (audit) |
 | C-20 | Why did M15 turn tests outside T-35 red? | Tests share one container, and `goalflow_app` cannot delete rows, so rows from earlier tests remain. Isolation between tests relies on unique consumer names **and** on R-45. Without the filter, a test's oldest-first batch of 10 fills with other tests' rows, and claiming an unknown consumer's row aborts the pass. That is detection, not flakiness, but a failure of R-45 shows up in unrelated tests. | Mentor, 2026-11-05 (audit) |
 | C-13 | Who sends the hint? | A transaction interceptor after the commit (ADR-02 C-20); T-32 pins the moment. | Owner and mentor, 2026-11-04 (review) |
 
@@ -184,7 +185,7 @@ A delivery committed with its producer's transaction is completed exactly once b
 | T-34 | R-17, R-29 | Two tenants with two deliveries each, and a test consumer that reads `Equipo` through its own unit of work. (1) A connection interceptor that counts opens and closes across all scopes records a maximum of **1** connection open at once. (2) The same run with `Maximum Pool Size = 1` and a 5 s connection timeout completes all four deliveries. | The consumer runs while the claim's connection or transaction is still open, or tenants are processed in parallel (case 2 times out). |
 | T-35 | R-45, R-23 | A delivery for consumer `no-registrado` and one for a registered consumer, both available: the pass completes only the registered one; the other stays `Pendiente` with attempts 0, even after several passes. | The claim does not filter by registered consumer names (the unknown row is claimed and failed, or retried). |
 | T-36 | R-23, R-24 | Stale candidate (C-18). Worker A claims with a 2 s lease and commits. After the lease expires, worker B reads the candidate (attempts 1). Before B claims: (a) A completes with its token, so the row is `Completada`; then B's claim affects zero rows and the row stays `Completada`. (b) In a second case, A retries with its token and a 60 s backoff, so the row is `Pendiente` with a future next attempt time; then B's claim affects zero rows and attempts stay 1. | The availability condition is removed from the claim's `UPDATE` (M1): B revives a completed delivery or ignores the backoff. |
-| T-37 | R-46 | Architecture rule: no type in `GoalFlow.Infrastructure` depends on `Microsoft.AspNetCore`. Canary: a fixture type that uses `Microsoft.AspNetCore.Http.HttpContext` fails the rule. | The rule checks references between projects instead of types, or ignores the shared framework. |
+| T-37 | R-46 | Two checks, neither filtered by namespace. (a) **References:** the compiled `GoalFlow.Infrastructure` assembly references no assembly whose name starts with `Microsoft.AspNetCore`; the compiler emits a reference only for assemblies actually used, so this holds whatever namespace a type is in. Canary: the same check on the test assembly, which uses `Microsoft.AspNetCore.Mvc.Testing`, fails. (b) **Types:** no type of the assembly, **including types in the global namespace**, depends on `Microsoft.AspNetCore`; the failure names the type. Canary: a fixture type that uses `HttpContext` fails. | The check filters types by a `GoalFlow` namespace (M17 survived this way, C-21), or checks only public types. |
 
 **Canaries in this table:** T-25 to T-29 have explicit canary fixtures; T-22 and T-27 distinguish their failure causes; T-23 proves its log capture is real.
 
@@ -206,7 +207,7 @@ A delivery committed with its producer's transaction is completed exactly once b
 - M14: let exceptions escape the loop (remove the catch around a pass).
 - M15: remove the registered-consumer condition from the claim (and from the candidate listing, so that it is not masked).
 - M16 (after the audit): M1 again, to show that T-36 now detects it.
-- M17 (after the audit): a type in `GoalFlow.Infrastructure` that uses `HttpContext`, to show that T-37 detects it.
+- M17 (after the audit): a type in `GoalFlow.Infrastructure`, with no namespace, that uses `HttpContext`. It survived the first version of T-37 (C-21) and is run again after the fix.
 
 ## 7. Out of scope
 
