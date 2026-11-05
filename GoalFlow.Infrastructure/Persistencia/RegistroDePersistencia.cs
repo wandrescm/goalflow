@@ -38,7 +38,7 @@ public static class RegistroDePersistencia
 
         // El DbContext lleva el interceptor de avisos: las piezas de Mensajeria que necesita se registran aquí
         // (idempotente; el ciclo en segundo plano lo agrega AddGoalFlowMensajeria).
-        services.AddGoalFlowMensajeria();
+        services.AddNucleoDeMensajeria();
 
         services.AddDbContext<GoalFlowDbContext>((proveedor, opciones) =>
         {

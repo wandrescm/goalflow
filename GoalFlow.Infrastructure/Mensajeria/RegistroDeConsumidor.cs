@@ -11,7 +11,7 @@ namespace GoalFlow.Infrastructure.Mensajeria;
 public sealed record RegistroDeConsumidor(
     string NombreDelEvento,
     string Nombre,
-    Func<IServiceProvider, EntregaEvento, int, CancellationToken, Task> Procesar)
+    Func<IServiceProvider, EntregaReclamada, CancellationToken, Task> Procesar)
 {
     public static RegistroDeConsumidor Crear<TEvento, TConsumidor>(string? nombre)
         where TEvento : IEventoDeIntegracion
@@ -26,11 +26,11 @@ public sealed record RegistroDeConsumidor(
         return new RegistroDeConsumidor(
             TEvento.NombreDelEvento,
             nombre ?? TConsumidor.Nombre,
-            (proveedor, fila, intento, cancellationToken) =>
+            (proveedor, entrega, cancellationToken) =>
             {
-                var evento = (TEvento)constructor.Invoke([fila.TenantId, fila.AgregadoId, fila.VersionDelAgregado]);
+                var evento = (TEvento)constructor.Invoke([entrega.Tenant, entrega.AgregadoId, entrega.Version]);
                 return proveedor.GetRequiredService<TConsumidor>()
-                    .ProcesarAsync(new EntregaDeEvento<TEvento>(evento, intento), cancellationToken);
+                    .ProcesarAsync(new EntregaDeEvento<TEvento>(evento, entrega.Intentos), cancellationToken);
             });
     }
 }

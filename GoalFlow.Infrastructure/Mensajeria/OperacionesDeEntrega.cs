@@ -143,8 +143,8 @@ public sealed class OperacionesDeEntrega(
         return RegistrarLeasePerdido(entrega, afectadas);
     }
 
-    /// <summary>Fallo permanente: <c>Fallida</c> con el código de razón del consumidor (R-33, R-36).</summary>
-    public async Task<bool> FallarAsync(EntregaReclamada entrega, string codigoDeRazon, CancellationToken cancellationToken)
+    /// <summary>Fallo permanente: <c>Fallida</c> con el tipo y el código de razón del consumidor, nunca un mensaje (R-14, R-33, R-36).</summary>
+    public async Task<bool> FallarAsync(EntregaReclamada entrega, string ultimoError, CancellationToken cancellationToken)
     {
         ExigirTransaccion();
         var (id, token) = (entrega.Id, entrega.Token);
@@ -154,7 +154,7 @@ public sealed class OperacionesDeEntrega(
             .ExecuteUpdateAsync(s => s
                 .SetProperty(e => e.Estado, EstadoDeEntrega.Fallida)
                 .SetProperty(e => e.LeaseVenceEn, _ => (DateTime?)null)
-                .SetProperty(e => e.UltimoError, codigoDeRazon), cancellationToken);
+                .SetProperty(e => e.UltimoError, ultimoError), cancellationToken);
 
         if (afectadas == 1)
             logger.LogWarning(

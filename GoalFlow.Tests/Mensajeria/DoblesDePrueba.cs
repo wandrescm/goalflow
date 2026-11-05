@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using GoalFlow.Application.Mensajeria;
+using GoalFlow.Application.Tenancy;
 using GoalFlow.Domain.Tenancy;
 using GoalFlow.Infrastructure.Mensajeria;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,7 +20,7 @@ public sealed record EventoSinConsumidores(TenantId TenantId, Guid AgregadoId, i
     public static string NombreDelEvento => "prueba.sin-consumidores";
 }
 
-public sealed record LlamadaRegistrada(TenantId Tenant, Guid AgregadoId, int Version, int Intento);
+public sealed record LlamadaRegistrada(TenantId Tenant, Guid AgregadoId, int Version, int Intento, TenantId TenantDelScope, DateTime Cuando);
 
 public interface IRanura;
 
@@ -33,7 +34,7 @@ public sealed class Comportamiento<TRanura> where TRanura : IRanura
     private readonly ConcurrentQueue<LlamadaRegistrada> _llamadas = new();
     private int _enCurso;
 
-    public Func<EntregaDeEvento<EventoDePrueba>, CancellationToken, Task> Accion { get; set; } = (_, _) => Task.CompletedTask;
+    public Func<EntregaDeEvento<EventoDePrueba>, IServiceProvider, CancellationToken, Task> Accion { get; set; } = (_, _, _) => Task.CompletedTask;
 
     public IReadOnlyList<LlamadaRegistrada> Llamadas => [.. _llamadas];
 
@@ -41,14 +42,15 @@ public sealed class Comportamiento<TRanura> where TRanura : IRanura
 
     public int EnCurso => Volatile.Read(ref _enCurso);
 
-    internal async Task EjecutarAsync(EntregaDeEvento<EventoDePrueba> entrega, CancellationToken cancellationToken)
+    internal async Task EjecutarAsync(EntregaDeEvento<EventoDePrueba> entrega, IServiceProvider scope, CancellationToken cancellationToken)
     {
         _llamadas.Enqueue(new LlamadaRegistrada(
-            entrega.Evento.TenantId, entrega.Evento.AgregadoId, entrega.Evento.Version, entrega.Intento));
+            entrega.Evento.TenantId, entrega.Evento.AgregadoId, entrega.Evento.Version, entrega.Intento,
+            scope.GetRequiredService<ITenantContext>().Current, DateTime.UtcNow));
         Interlocked.Increment(ref _enCurso);
         try
         {
-            await Accion(entrega, cancellationToken);
+            await Accion(entrega, scope, cancellationToken);
         }
         finally
         {
@@ -57,13 +59,13 @@ public sealed class Comportamiento<TRanura> where TRanura : IRanura
     }
 }
 
-public sealed class ConsumidorDePrueba<TRanura>(Comportamiento<TRanura> comportamiento)
+public sealed class ConsumidorDePrueba<TRanura>(Comportamiento<TRanura> comportamiento, IServiceProvider scope)
     : IConsumidorDeEvento<EventoDePrueba> where TRanura : IRanura
 {
     public static string Nombre => "prueba-" + typeof(TRanura).Name;
 
     public Task ProcesarAsync(EntregaDeEvento<EventoDePrueba> entrega, CancellationToken cancellationToken) =>
-        comportamiento.EjecutarAsync(entrega, cancellationToken);
+        comportamiento.EjecutarAsync(entrega, scope, cancellationToken);
 }
 
 /// <summary>Un consumidor registrado con un nombre único: el contenedor es compartido y goalflow_app no borra (handoff §4).</summary>
@@ -71,10 +73,10 @@ public sealed record ConsumidorRegistrado<TRanura>(string Nombre, Comportamiento
 
 public static class RegistroDePruebas
 {
-    public static ConsumidorRegistrado<TRanura> AddConsumidorDePrueba<TRanura>(this IServiceCollection servicios)
+    public static ConsumidorRegistrado<TRanura> AddConsumidorDePrueba<TRanura>(this IServiceCollection servicios, string? nombreFijo = null)
         where TRanura : IRanura
     {
-        var nombre = $"{ConsumidorDePrueba<TRanura>.Nombre}-{Guid.NewGuid():N}";
+        var nombre = nombreFijo ?? $"{ConsumidorDePrueba<TRanura>.Nombre}-{Guid.NewGuid():N}";
         var comportamiento = new Comportamiento<TRanura>();
         servicios.AddSingleton(comportamiento);
         servicios.AddConsumidorDeEvento<EventoDePrueba, ConsumidorDePrueba<TRanura>>(nombre);

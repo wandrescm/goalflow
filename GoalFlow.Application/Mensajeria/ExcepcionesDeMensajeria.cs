@@ -11,7 +11,8 @@ public class EntregaDuplicadaException(Exception original)
 /// El consumidor declara que reintentar no ayuda. El código de razón lo elige el consumidor entre sus
 /// constantes; nunca se guarda un mensaje de excepción (Spec 004 R-14).
 /// </summary>
-public class FalloPermanenteException(string codigoDeRazon) : Exception("Fallo permanente del consumidor.")
+public class FalloPermanenteException(string codigoDeRazon, Exception? interna = null)
+    : Exception("Fallo permanente del consumidor.", interna)
 {
     public string CodigoDeRazon { get; } = codigoDeRazon;
 }
