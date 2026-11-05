@@ -2,10 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-08 (S2D1)
-- **Related:** ADR-07 (runtime), ADR-02 (post-save pipeline, pending), ADR-14 (multi-tenancy)
-- **Amended:** 2026-10-30 (`Ligas` module, Tenancy content, transitive Domain reference)
+- **Related:** ADR-07 (runtime), ADR-02 (post-save pipeline), ADR-14 (multi-tenancy)
+- **Amended:** 2026-10-30 (`Ligas` module, Tenancy content, transitive Domain reference); 2026-11-04 (shared namespace `Mensajeria`, with ADR-02)
 
-Translated from Spanish on 2026-10-11; the decision is unchanged. Amended on 2026-10-30 together with ADR-14; the amendments are listed in the "Amendments" section.
+Translated from Spanish on 2026-10-11; the decision is unchanged. Amended on 2026-10-30 together with ADR-14, and on 2026-11-04 together with ADR-02; the amendments are listed in the "Amendments" section.
 
 ## Context
 
@@ -41,7 +41,12 @@ Exception: Tenancy is the shared kernel and may be used whole. It contains only 
 
    An entry "X.Contracts" allows only that sub-namespace; an entry "X" (only Tenancy) allows the whole module.
 
-   **Shared namespaces that are not modules:** `Hosting` (Api composition: endpoints, middleware, configuration) and `Persistencia` (the unit-of-work port in Application; the `DbContext`, interceptors and migrations in Infrastructure, ADR-14 §2.3). They are not evaluated as modules, and any module may use them. Adding another shared namespace requires updating this list and `TablaDeModulos.NamespacesCompartidos` in the same commit.
+   **Shared namespaces that are not modules:**
+   - `Hosting`: Api composition (endpoints, middleware, configuration).
+   - `Persistencia`: the unit-of-work port in Application; the `DbContext`, interceptors and migrations in Infrastructure (ADR-14 §2.3).
+   - `Mensajeria`: reliable delivery of integration events (ADR-02). In Application: the publishing port, the event and consumer contracts and the tenant-source port. In Infrastructure: the delivery table mapping, the publishing adapter, the channel and the processing loop.
+
+   They are not evaluated as modules, and any module may use them. A shared namespace holds only cross-cutting mechanics, never business rules; business modules still reach each other only through `.Contracts`, and `Mensajeria` is not a route around that rule. Event types live in the emitting module's `.Contracts`. Adding another shared namespace requires updating this list and `TablaDeModulos.NamespacesCompartidos` in the same commit.
 
 8. **Tenant context.** The abstraction for the current tenant is a port in Application. The `TenantId` is data of the message or command and never ambient thread state: each background job creates its own DI scope and sets the tenant from the message (the pipeline has no `HttpContext`).
 9. **A single process with bounded memory.** Every in-memory queue is bounded (`Channel` with a maximum capacity and a wait policy) and every in-memory cache has a `SizeLimit`. The LLM provider is remote: it does not consume model memory, but it does use buffers for responses.
@@ -70,3 +75,5 @@ Architecture tests in `GoalFlow.Tests/Architecture`: rules for references betwee
   - Tenancy reviewed: it holds only `TenantId`, `ITenantContext` and the missing-tenant exception (§6).
   - §3 states that Infrastructure and Api reach Domain through the transitive reference of Application.
   - §7 lists the shared namespaces `Hosting` and `Persistencia`, which are not modules.
+- **2026-11-04 (with ADR-02):**
+  - §7 adds the shared namespace `Mensajeria` and states that shared namespaces hold only cross-cutting mechanics and are not a route to couple modules.

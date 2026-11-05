@@ -2,7 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-30 (revised the same day after the owner's review: §2.2, §2.3, §2.6, §2.7, §4, C-08 to C-11)
-- **Related:** ADR-03 (modular monolith), ADR-05 (hosting, roles, migrations), ADR-01 (authentication, pending), Spec 002
+- **Related:** ADR-03 (modular monolith), ADR-05 (hosting, roles, migrations), ADR-01 (authentication), ADR-02 (post-save pipeline), Spec 002, Spec 004
+- **Amended:** 2026-11-04 with ADR-02 (§2.3 second exception: tenant enumeration; §5 general rule; C-12, C-15)
 
 ## 1. Context
 
@@ -41,7 +42,11 @@ Isolation is enforced twice. A missing or wrong EF Core filter, an `IgnoreQueryF
 ### 2.3 The scope is an explicit transaction
 
 - Every read or write on tenant-scoped tables and on `admins_liga` runs inside an **explicit** transaction opened through a unit-of-work port in Application. Transactions that EF Core might open on its own are not relied upon (fact 9).
-- **One exception: slug resolution.** Reading `ligas` to resolve a slug happens before any tenant or identity exists. It runs without a transaction and without context, through its own port. This is safe because `ligas` has no RLS and holds only public data, and because an EF Core query outside an explicit transaction opens none, so the transaction interceptor does not run.
+- **Two exceptions, both reads of `ligas`.** They run without a transaction and without context, each through its own port. This is safe because `ligas` has no RLS and holds only public data, and because an EF Core query outside an explicit transaction opens none, so the transaction interceptor does not run.
+  - **Slug resolution.** Reading `ligas` to resolve a slug happens before any tenant or identity exists.
+  - **Tenant enumeration (added with ADR-02).** The post-save processing loop reads **only the identifiers** of `ligas`, through the tenant-source port, so that it can open one isolated scope and transaction per tenant. It grants nothing on any other table, and it involves no `IgnoreQueryFilters`, no superuser and no cross-tenant query on tenant-scoped data. Tenant-scoped rows are still read only inside a transaction for one tenant.
+
+  No other read outside the unit-of-work port is allowed; a third one needs an amendment to this ADR.
 - When a transaction starts on the GoalFlow `DbContext`, a transaction interceptor in Infrastructure sets, with transaction scope (`set_config(…, true)`):
   - `app.tenant_id`, if `ITenantContext` has a tenant;
   - `app.user_id`, if the authenticated-identity port has a user (§2.7).
@@ -128,6 +133,8 @@ Isolation is tested in two layers, because a test that goes through both cannot 
 
 The full list of requirements and tests is in Spec 002.
 
+**General rule (added with ADR-02, Spec 004):** from the second tenant-scoped table on, isolation is no longer proven only table by table. An architecture test checks that every entity in the real EF Core model with a `TenantId` has the `Tenant` filter, except `AdminLiga` (identity policy, §2.7). A test against the migrated database checks that every `goalflow` table with a `tenant_id` column has RLS and at least one policy. Each rule has a canary.
+
 ## 6. Clarifications
 
 - **C-01** *Filter only or filter plus RLS?* Both, now. Decided by the owner on 2026-10-30.
@@ -141,6 +148,14 @@ The full list of requirements and tests is in Spec 002.
 - **C-09** *How can `admins_liga` be read before the tenant is known, if every transaction requires a tenant?* The interceptor sets whatever context exists (tenant, identity or both) and throws only when neither exists (§2.3). Admin routes resolve the tenant from the slug first (§2.6); the identity-only path is limited to the user's own membership rows (§2.7). Raised by the owner on 2026-10-30.
 - **C-10** *Raw SQL is forbidden, but RLS can only be proven with raw SQL. What is allowed?* In production code: migrations (policies, revokes) and the `set_config` statement of the transaction interceptor. In tests: isolation tests that connect to the disposable test database. Nothing else. Spec 003 turns this allowlist into an architecture test. Raised by the owner on 2026-10-30.
 - **C-11** *Are the two layers independent?* Only against missing filters, policies or context. They share the tenant value, so a wrong value passes both (§2.2, §4). Raised by the owner on 2026-10-30.
-- **C-12** *How is a public league resolved with neither tenant nor user?* The slug resolver reads `ligas` without a transaction and without context (§2.3); it is the only read allowed outside the unit-of-work port. Raised by the owner on 2026-10-30.
+- **C-12** *How is a public league resolved with neither tenant nor user?* The slug resolver reads `ligas` without a transaction and without context (§2.3); since 2026-11-04 it is one of the only two reads allowed outside the unit-of-work port; the other is the tenant enumeration of ADR-02 (C-15). Raised by the owner on 2026-10-30.
 - **C-13** *Foreign keys from `tenant_id` to `ligas`?* Yes, on `equipos` and `admins_liga`, added before the first migration is applied, with `ON DELETE RESTRICT`. Decided by the owner on 2026-10-30; delete behavior raised by the owner and set on 2026-10-31.
 - **C-14** *Rate limit on the first public endpoint?* Deferred as a temporary exception to `CLAUDE.md`, with owner, deadline (before the frontend is public, no later than 2026-11-16) and pending tests (real client IP, forged `X-Forwarded-For`, HTTP `429`). Recorded in Spec 002 §10. Decided by the owner on 2026-10-30.
+- **C-15** *How does a background job find work across tenants if `goalflow_app` sees one tenant per transaction?* Through a second read of `ligas` outside the unit-of-work port, limited to league identifiers: "discover globally, process locally" (§2.3). Raised by the mentor and resolved by the owner on 2026-11-04, with ADR-02.
+
+## 7. Amendments
+
+- **2026-11-04 (with ADR-02):**
+  - §2.3 lists two reads of `ligas` outside the unit-of-work port, slug resolution and tenant enumeration, and forbids a third without an amendment.
+  - §5 adds the general rule for tenant-scoped entities and tables (Spec 004).
+  - C-12 is updated, and C-15 is added.
