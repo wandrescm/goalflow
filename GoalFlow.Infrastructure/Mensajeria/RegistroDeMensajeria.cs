@@ -19,6 +19,7 @@ public static class RegistroDeMensajeria
         services.TryAddScoped<AvisosPendientes>();
         services.TryAddScoped<InterceptorDeAvisos>();
         services.TryAddScoped<IPublicadorDeEventos, PublicadorDeEventos>();
+        services.TryAddScoped<OperacionesDeEntrega>();
 
         return services;
     }

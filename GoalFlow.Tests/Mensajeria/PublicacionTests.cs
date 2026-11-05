@@ -148,14 +148,6 @@ public class PublicacionTests(BaseDeAislamiento db)
         }
     }
 
-    private async Task<long> ContarBloqueados()
-    {
-        await using var conexion = new NpgsqlConnection(db.CadenaSuperusuario);
-        await conexion.OpenAsync();
-        await using var comando = new NpgsqlCommand(
-            "select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()", conexion);
-        return (long)(await comando.ExecuteScalarAsync())!;
-    }
 
     [Fact]
     public async Task T13_un_llamador_idempotente_concurrente_deja_una_sola_fila_y_ninguno_falla()
@@ -176,7 +168,7 @@ public class PublicacionTests(BaseDeAislamiento db)
 
         await primera.GuardarAsync();
         var guardadoDeLaSegunda = Task.Run(segunda.GuardarAsync);
-        await Esperar(async () => await ContarBloqueados() > 0, "la segunda inserción espera el índice único");
+        await Esperar(async () => await db.ContarBloqueados() > 0, "la segunda inserción espera el índice único");
         Assert.False(guardadoDeLaSegunda.IsCompleted);
 
         await primera.ConfirmarAsync();

@@ -71,6 +71,16 @@ public static class AyudantesDeMensajeria
         return id;
     }
 
+    /// <summary>Sesiones esperando un bloqueo de fila: prueba que una sentencia quedó detenida a la espera de otra transacción.</summary>
+    public static async Task<long> ContarBloqueados(this BaseDeAislamiento db)
+    {
+        await using var conexion = new NpgsqlConnection(db.CadenaSuperusuario);
+        await conexion.OpenAsync();
+        await using var comando = new NpgsqlCommand(
+            "select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()", conexion);
+        return (long)(await comando.ExecuteScalarAsync())!;
+    }
+
     /// <summary>Sondeo con tope de 30 s: nunca un retraso fijo como aserción (Spec 004 §4).</summary>
     public static async Task Esperar(Func<Task<bool>> condicion, string descripcion, TimeSpan? tope = null)
     {
