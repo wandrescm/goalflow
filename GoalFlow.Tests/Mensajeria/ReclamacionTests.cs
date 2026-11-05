@@ -294,6 +294,24 @@ public class ReclamacionTests(BaseDeAislamiento db, ITestOutputHelper salida)
     }
 
     [Fact]
+    public async Task R22_la_lectura_de_candidatas_respeta_el_tope_de_lote()
+    {
+        ConsumidorRegistrado<RanuraA> a = null!;
+        await using var servicios = db.CrearServicios(s =>
+        {
+            a = s.AddConsumidorDePrueba<RanuraA>();
+            s.Configure<OpcionesDeMensajeria>(o => o.LotePorTenant = 10);
+        });
+        for (var i = 0; i < 12; i++)
+            await ProducirAsync(servicios, LigaA, Guid.NewGuid(), 1, null, confirmar: true);
+        Assert.Equal(12, (await db.LeerEntregas(a.Nombre)).Count);
+
+        await using var trabajador = await Trabajador.IniciarAsync(servicios, LigaA);
+
+        Assert.Equal(10, (await trabajador.Operaciones.ListarCandidatasAsync(Ct)).Count);
+    }
+
+    [Fact]
     public async Task T11_sin_transaccion_las_operaciones_lanzan_antes_de_enviar_ninguna_sentencia()
     {
         var comandos = new RegistroDeComandos();

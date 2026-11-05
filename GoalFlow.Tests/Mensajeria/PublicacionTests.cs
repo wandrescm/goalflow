@@ -181,6 +181,21 @@ public class PublicacionTests(BaseDeAislamiento db)
     }
 
     [Fact]
+    public async Task R13_la_guarda_de_SaveChanges_rechaza_una_entrega_con_el_tenant_de_otra_liga()
+    {
+        ConsumidorRegistrado<RanuraA> a = null!;
+        await using var servicios = db.CrearServicios(s => a = s.AddConsumidorDePrueba<RanuraA>());
+        await using var scope = servicios.ScopeDe(LigaA);
+        await using var transaccion = await scope.Iniciar();
+
+        // Un evento de la liga B publicado desde un scope de la liga A.
+        scope.ServiceProvider.GetRequiredService<IPublicadorDeEventos>().Publicar(new EventoDePrueba(LigaB, Guid.NewGuid(), 1));
+
+        await Assert.ThrowsAsync<TenantInvalidoException>(() => scope.Contexto().SaveChangesAsync());
+        Assert.Empty(await db.LeerEntregas(a.Nombre));
+    }
+
+    [Fact]
     public async Task T20_publicar_un_evento_sin_consumidores_no_escribe_filas_y_registra_Information()
     {
         var captura = new CapturaDeRegistros();
