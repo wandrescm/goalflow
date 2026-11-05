@@ -139,6 +139,13 @@ public static class ReglasDeArquitectura
 
     // ---- Pipeline post-guardado (Spec 004) ----
 
+    /// <summary>
+    /// Spec 004 R-46 (T-37 a): el ensamblado no referencia ninguno cuyo nombre empiece por Microsoft.AspNetCore.
+    /// El compilador solo emite referencias a ensamblados usados, así que esto vale sea cual sea el namespace del tipo.
+    /// </summary>
+    public static ResultadoRegla SinReferenciasAAspNetCore(Assembly ensamblado) =>
+        ReferenciasPermitidas(ensamblado, n => !n.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal));
+
     /// <summary>Spec 004 R-46 (T-37): Infrastructure referencia el framework compartido de ASP.NET Core, pero ningún tipo suyo lo usa.</summary>
     public static ResultadoRegla InfrastructureSinAspNetCore(PredicateList tipos) =>
         SinDependenciasDe(tipos, "Microsoft.AspNetCore");
