@@ -110,3 +110,12 @@ namespace GoalFlow.Tests.Architecture.Fixtures.GrafoConMensajeria.Estadisticas
         public TorneosEntidad? Entidad;
     }
 }
+
+namespace GoalFlow.Tests.Architecture.Fixtures.InfrastructureConAspNetCore
+{
+    /// <summary>Violación deliberada: un tipo de "Infrastructure" que usa HttpContext (Spec 004 T-37).</summary>
+    public class InfrastructureUsaHttpContext
+    {
+        public string? Ruta(Microsoft.AspNetCore.Http.HttpContext contexto) => contexto.Request.Path.Value;
+    }
+}

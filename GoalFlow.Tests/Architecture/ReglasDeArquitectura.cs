@@ -139,6 +139,10 @@ public static class ReglasDeArquitectura
 
     // ---- Pipeline post-guardado (Spec 004) ----
 
+    /// <summary>Spec 004 R-46 (T-37): Infrastructure referencia el framework compartido de ASP.NET Core, pero ningún tipo suyo lo usa.</summary>
+    public static ResultadoRegla InfrastructureSinAspNetCore(PredicateList tipos) =>
+        SinDependenciasDe(tipos, "Microsoft.AspNetCore");
+
     private static readonly (string Nombre, Type Tipo)[] PropiedadesDeEvento =
         [("AgregadoId", typeof(Guid)), ("TenantId", typeof(TenantId)), ("Version", typeof(int))];
 
