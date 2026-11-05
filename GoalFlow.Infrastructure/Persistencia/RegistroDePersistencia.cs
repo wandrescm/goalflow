@@ -49,7 +49,8 @@ public static class RegistroDePersistencia
             opciones.ConfigureWarnings(w => w.Throw(CoreEventId.ManyServiceProvidersCreatedWarning));
             opciones.AddInterceptors(
                 proveedor.GetRequiredService<InterceptorDeTransacciones>(),
-                proveedor.GetRequiredService<InterceptorDeGuardado>());
+                proveedor.GetRequiredService<InterceptorDeGuardado>(),
+                proveedor.GetRequiredService<InterceptorDeAvisos>());
         });
 
         return services;

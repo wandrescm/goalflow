@@ -15,7 +15,9 @@ public static class RegistroDeMensajeria
             .BindConfiguration(OpcionesDeMensajeria.Seccion)
             .ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<OpcionesDeMensajeria>, ValidadorDeOpcionesDeMensajeria>());
+        services.TryAddSingleton<CanalDeAvisos>();
         services.TryAddScoped<AvisosPendientes>();
+        services.TryAddScoped<InterceptorDeAvisos>();
         services.TryAddScoped<IPublicadorDeEventos, PublicadorDeEventos>();
 
         return services;
