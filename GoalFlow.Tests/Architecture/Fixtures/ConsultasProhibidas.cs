@@ -167,6 +167,43 @@ namespace GoalFlow.Tests.Architecture.Fixtures.ConsultasProhibidas.F3DbCommand
     }
 }
 
+// ---- Huecos hallados por la auditoría (Spec 005 C-17, C-18) ----
+
+namespace GoalFlow.Tests.Architecture.Fixtures.ConsultasProhibidas.F1ArbolDeExpresion
+{
+    using System.Linq.Expressions;
+    using Comun;
+
+    public class Caso
+    {
+        public Expression<Func<IQueryable<Entidad>, IQueryable<Entidad>>> Obtener() => q => q.IgnoreQueryFilters();
+    }
+}
+
+namespace GoalFlow.Tests.Architecture.Fixtures.ConsultasProhibidas.F3GrupoDeMetodos
+{
+    public class Caso
+    {
+        public Func<int> Obtener(DbCommand comando) => comando.ExecuteNonQuery;
+    }
+}
+
+namespace GoalFlow.Tests.Architecture.Fixtures.ConsultasProhibidas.F3Interfaz
+{
+    public class Caso
+    {
+        public int Ejecutar(System.Data.IDbCommand comando) => comando.ExecuteNonQuery();
+    }
+}
+
+namespace GoalFlow.Tests.Architecture.Fixtures.ConsultasProhibidas.F3ConstructorNpgsql
+{
+    public class Caso
+    {
+        public NpgsqlCommand Crear() => new NpgsqlCommand();
+    }
+}
+
 // ---- F4: MigrationBuilder.Sql fuera de una Migration ----
 
 namespace GoalFlow.Tests.Architecture.Fixtures.ConsultasProhibidas.F4SinMigration

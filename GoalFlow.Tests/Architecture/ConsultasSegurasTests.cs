@@ -69,6 +69,10 @@ public class ConsultasSegurasTests
     [InlineData(typeof(Fixtures.ConsultasProhibidas.F3NpgsqlCommand.Caso), FamiliaDeConsulta.F3)]
     [InlineData(typeof(Fixtures.ConsultasProhibidas.F3DbCommand.Caso), FamiliaDeConsulta.F3)]
     [InlineData(typeof(Fixtures.ConsultasProhibidas.F4SinMigration.Caso), FamiliaDeConsulta.F4)]
+    [InlineData(typeof(Fixtures.ConsultasProhibidas.F1ArbolDeExpresion.Caso), FamiliaDeConsulta.F1)]
+    [InlineData(typeof(Fixtures.ConsultasProhibidas.F3GrupoDeMetodos.Caso), FamiliaDeConsulta.F3)]
+    [InlineData(typeof(Fixtures.ConsultasProhibidas.F3Interfaz.Caso), FamiliaDeConsulta.F3)]
+    [InlineData(typeof(Fixtures.ConsultasProhibidas.F3ConstructorNpgsql.Caso), FamiliaDeConsulta.F3)]
     public void Canario_de_llamada_prohibida_produce_exactamente_una_violacion(Type caso, FamiliaDeConsulta familia)
     {
         var resultado = AnalizarFixture(caso);
