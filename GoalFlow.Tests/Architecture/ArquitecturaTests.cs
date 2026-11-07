@@ -11,8 +11,9 @@ public class ArquitecturaTests
     private static readonly Assembly Infrastructure = GoalFlow.Infrastructure.AssemblyReference.Assembly;
     private static readonly Assembly Api = GoalFlow.Api.AssemblyReference.Assembly;
 
+    // Spec 005 R-37: todos los tipos del ensamblado, sin filtro de namespace (AreAbstract o no abstracto = todos).
     private static PredicateList TiposDe(Assembly ensamblado) =>
-        Types.InAssembly(ensamblado).That().ResideInNamespaceStartingWith("GoalFlow");
+        Types.InAssembly(ensamblado).That().AreAbstract().Or().AreNotAbstract();
 
     private static void Cumple(ResultadoRegla resultado) => Assert.True(resultado.Cumple, resultado.ToString());
 
