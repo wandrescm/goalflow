@@ -15,8 +15,7 @@ public static class AdminEndpoints
 
         admin.MapGet("/sesion", (HttpContext context) => Results.Ok(context.Features.Get<SesionDeAdmin>()));
 
-        // STUB (commit de pruebas): la importación llega en el commit siguiente.
-        admin.MapPut("/torneos/{codigo}", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
+        admin.MapImportacionDeTorneo();
 
         return app;
     }

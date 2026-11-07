@@ -65,3 +65,9 @@ public static partial class HoraProgramada
         return null;
     }
 }
+
+/// <summary>Formato de los códigos de R-12, para quien valida antes de construir entidades (por ejemplo la ruta de la API).</summary>
+public static class FormatoDeCodigos
+{
+    public static bool EsValido(string? codigo) => Reglas.CodigoValido(codigo);
+}

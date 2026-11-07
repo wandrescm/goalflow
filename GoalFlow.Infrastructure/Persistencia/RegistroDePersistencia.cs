@@ -34,6 +34,8 @@ public static class RegistroDePersistencia
         services.AddScoped<ConsultaDeMembresia>();
         services.AddScoped<ILectorDeEquipos, LectorDeEquipos>();
         services.AddScoped<ConsultaDeEquipos>();
+        services.AddScoped<IAlmacenDeImportacion, AlmacenDeImportacion>();
+        services.AddScoped<ImportacionDeTorneo>();
         services.AddScoped<IFuenteDeTenants, FuenteDeTenants>();
 
         // El DbContext lleva el interceptor de avisos: las piezas de Mensajeria que necesita se registran aquí

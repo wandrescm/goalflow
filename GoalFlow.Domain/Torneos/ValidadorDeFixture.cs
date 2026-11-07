@@ -43,7 +43,7 @@ public static class ValidadorDeFixture
             var fase = fixture.Fases[i];
             if (fase.Orden < 1) Agregar($"fases[{i}].orden", RazonesDeDominio.OrdenInvalido);
             if (fase.Vueltas is not (1 or 2)) Agregar($"fases[{i}].vueltas", RazonesDeDominio.VueltasInvalidas);
-            if (!Enum.TryParse<TipoDeFase>(fase.Tipo, ignoreCase: false, out var tipo) || !Enum.IsDefined(tipo))
+            if (!Enum.GetNames<TipoDeFase>().Contains(fase.Tipo, StringComparer.Ordinal))
                 Agregar($"fases[{i}].tipo", CodigosDeFixture.TipoDeFaseInvalido);
         }
 
