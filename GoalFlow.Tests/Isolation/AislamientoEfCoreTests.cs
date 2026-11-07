@@ -66,7 +66,7 @@ public class AislamientoEfCoreTests(BaseDeAislamiento db)
         await using (var scope = ScopeDe(servicios, LigaA))
         {
             await using var transaccion = await Iniciar(scope);
-            Contexto(scope).Equipos.Add(new Equipo(Guid.NewGuid(), default, nombre));
+            Contexto(scope).Equipos.Add(new Equipo(Guid.NewGuid(), default, "EQ-" + Guid.NewGuid().ToString("N")[..8], nombre));
             await Contexto(scope).SaveChangesAsync();
             await transaccion.ConfirmarAsync(Ct);
         }
@@ -83,7 +83,7 @@ public class AislamientoEfCoreTests(BaseDeAislamiento db)
         await using (var scope = ScopeDe(servicios, LigaA))
         {
             await using var transaccion = await Iniciar(scope);
-            Contexto(scope).Equipos.Add(new Equipo(Guid.NewGuid(), LigaB, nombre));
+            Contexto(scope).Equipos.Add(new Equipo(Guid.NewGuid(), LigaB, "EQ-" + Guid.NewGuid().ToString("N")[..8], nombre));
 
             await Assert.ThrowsAsync<TenantInvalidoException>(() => Contexto(scope).SaveChangesAsync());
         }
@@ -112,7 +112,7 @@ public class AislamientoEfCoreTests(BaseDeAislamiento db)
         var nombre = NombreUnico();
         await using var scope = ScopeDe(servicios, LigaA);
 
-        Contexto(scope).Equipos.Add(new Equipo(Guid.NewGuid(), LigaA, nombre));
+        Contexto(scope).Equipos.Add(new Equipo(Guid.NewGuid(), LigaA, "EQ-" + Guid.NewGuid().ToString("N")[..8], nombre));
 
         await Assert.ThrowsAsync<TransaccionRequeridaException>(() => Contexto(scope).SaveChangesAsync());
         Assert.Equal(0, await db.ContarComoSuperusuario(nombre));
@@ -127,7 +127,7 @@ public class AislamientoEfCoreTests(BaseDeAislamiento db)
         await using (var scope = ScopeDe(servicios, LigaA))
         {
             await using var transaccion = await Iniciar(scope);
-            Contexto(scope).Equipos.Add(new Equipo(Guid.NewGuid(), LigaA, nombre));
+            Contexto(scope).Equipos.Add(new Equipo(Guid.NewGuid(), LigaA, "EQ-" + Guid.NewGuid().ToString("N")[..8], nombre));
             await Contexto(scope).SaveChangesAsync();
             await transaccion.ConfirmarAsync(Ct);
         }

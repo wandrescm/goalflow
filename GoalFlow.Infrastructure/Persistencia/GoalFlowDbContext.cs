@@ -57,6 +57,7 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
             equipo.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
             ColumnaDeTenant(equipo.Property(e => e.TenantId), "tenant_id");
             equipo.Property(e => e.Nombre).HasColumnName("nombre");
+            equipo.Ignore(e => e.Codigo); // La columna llega con la migración TorneosYPartidos.
             equipo.HasIndex(e => e.TenantId).HasDatabaseName("ix_equipos_tenant_id");
             equipo.HasOne<Liga>().WithMany().HasForeignKey(e => e.TenantId)
                 .HasConstraintName("fk_equipos_ligas").OnDelete(DeleteBehavior.Restrict);

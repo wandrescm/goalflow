@@ -118,7 +118,7 @@ public static class AyudantesDeMensajeria
         await using var scope = servicios.ScopeDe(tenant);
         await using var transaccion = await scope.Iniciar();
         var contexto = scope.Contexto();
-        if (equipo is not null) contexto.Equipos.Add(new Equipo(Guid.NewGuid(), default, equipo));
+        if (equipo is not null) contexto.Equipos.Add(new Equipo(Guid.NewGuid(), default, "EQ-" + Guid.NewGuid().ToString("N")[..8], equipo));
         scope.ServiceProvider.GetRequiredService<IPublicadorDeEventos>().Publicar(new EventoDePrueba(tenant, agregado, version));
         await contexto.SaveChangesAsync();
         if (confirmar) await transaccion.ConfirmarAsync(CancellationToken.None);
