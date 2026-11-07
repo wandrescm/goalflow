@@ -13,15 +13,6 @@ public class Equipo
         Nombre = Reglas.ExigirNombre(nombre);
     }
 
-    // Solo para EF Core mientras Codigo no tiene columna (llega con la migración TorneosYPartidos).
-    private Equipo(Guid id, TenantId tenantId, string nombre)
-    {
-        Id = id;
-        TenantId = tenantId;
-        Codigo = string.Empty;
-        Nombre = nombre;
-    }
-
     public Guid Id { get; private set; }
     public TenantId TenantId { get; private set; }
     public string Codigo { get; private set; }

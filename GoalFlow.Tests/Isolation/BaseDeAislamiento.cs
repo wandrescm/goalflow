@@ -55,9 +55,9 @@ public sealed class BaseDeAislamiento : IAsyncLifetime
             insert into goalflow.ligas (id, slug, nombre) values
               ('{LigaA.Value}', 'liga-a', 'Liga A'),
               ('{LigaB.Value}', 'liga-b', 'Liga B');
-            insert into goalflow.equipos (id, tenant_id, nombre) values
-              ('{Guid.NewGuid()}', '{LigaA.Value}', '{EquipoDeA}'),
-              ('{Guid.NewGuid()}', '{LigaB.Value}', '{EquipoDeB}');
+            insert into goalflow.equipos (id, tenant_id, codigo, nombre) values
+              ('{Guid.NewGuid()}', '{LigaA.Value}', 'EQ-SEMILLA-A', '{EquipoDeA}'),
+              ('{Guid.NewGuid()}', '{LigaB.Value}', 'EQ-SEMILLA-B', '{EquipoDeB}');
             insert into goalflow.admins_liga (user_id, tenant_id, rol) values
               ('{UsuarioU1}', '{LigaA.Value}', 'admin'),
               ('{UsuarioU2}', '{LigaB.Value}', 'admin');

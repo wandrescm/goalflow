@@ -88,7 +88,7 @@ public class AislamientoRlsTests(BaseDeAislamiento db)
         await Fijar(conexion, transaccion, "app.tenant_id", LigaA.Value);
 
         await using var comando = new NpgsqlCommand(
-            $"insert into goalflow.equipos (id, tenant_id, nombre) values ('{Guid.NewGuid()}', '{LigaB.Value}', 'equipo-ajeno')",
+            $"insert into goalflow.equipos (id, tenant_id, codigo, nombre) values ('{Guid.NewGuid()}', '{LigaB.Value}', 'EQ-AJENO', 'equipo-ajeno')",
             conexion, transaccion);
         var error = await Assert.ThrowsAsync<PostgresException>(() => comando.ExecuteNonQueryAsync());
 

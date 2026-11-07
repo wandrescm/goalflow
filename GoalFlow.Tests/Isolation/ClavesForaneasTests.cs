@@ -43,7 +43,7 @@ public class ClavesForaneasTests(BaseDeAislamiento db)
 
         await RechazaPorClave(
             conexion, transaccion,
-            $"insert into goalflow.equipos (id, tenant_id, nombre) values ('{Guid.NewGuid()}', '{inexistente}', 'equipo-huerfano')",
+            $"insert into goalflow.equipos (id, tenant_id, codigo, nombre) values ('{Guid.NewGuid()}', '{inexistente}', 'EQ-HUERFANO', 'equipo-huerfano')",
             FkEquipos);
     }
 
@@ -69,7 +69,7 @@ public class ClavesForaneasTests(BaseDeAislamiento db)
         await using var transaccion = await conexion.BeginTransactionAsync();
         await Ejecutar(conexion, transaccion, $"""
             insert into goalflow.ligas (id, slug, nombre) values ('{liga}', 'liga-solo-equipo', 'Liga con equipo');
-            insert into goalflow.equipos (id, tenant_id, nombre) values ('{Guid.NewGuid()}', '{liga}', 'equipo-unico');
+            insert into goalflow.equipos (id, tenant_id, codigo, nombre) values ('{Guid.NewGuid()}', '{liga}', 'EQ-UNICO', 'equipo-unico');
             """);
 
         await RechazaPorClave(conexion, transaccion, $"delete from goalflow.ligas where id = '{liga}'", FkEquipos);

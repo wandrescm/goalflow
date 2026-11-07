@@ -100,13 +100,13 @@ public class ClavesDeTorneosTests(BaseDeAislamiento db)
         await conexion.OpenAsync();
         await using var transaccion = await conexion.BeginTransactionAsync();
 
-        await Ejecutar(conexion, transaccion, "create temp table canario_fk_simple (equipo_id uuid references goalflow.equipos (id))");
-        await Ejecutar(conexion, transaccion, "grant all on canario_fk_simple to goalflow_app");
+        await Ejecutar(conexion, transaccion, "create table goalflow.canario_fk_simple (equipo_id uuid references goalflow.equipos (id))");
+        await Ejecutar(conexion, transaccion, "grant all on goalflow.canario_fk_simple to goalflow_app");
         await Ejecutar(conexion, transaccion, "set local role goalflow_app");
         await Ejecutar(conexion, transaccion, $"select set_config('app.tenant_id', '{LigaA.Value}', true)");
 
         // Debe pasar: la FK simple no distingue ligas.
-        await Ejecutar(conexion, transaccion, $"insert into canario_fk_simple (equipo_id) values ('{g.EquipoB}')");
+        await Ejecutar(conexion, transaccion, $"insert into goalflow.canario_fk_simple (equipo_id) values ('{g.EquipoB}')");
 
         await transaccion.RollbackAsync();
     }

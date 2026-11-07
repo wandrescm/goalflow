@@ -77,6 +77,11 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("codigo");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasColumnType("text")
@@ -88,10 +93,263 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_equipos_tenant_id_id");
+
                     b.HasIndex("TenantId")
                         .HasDatabaseName("ix_equipos_tenant_id");
 
+                    b.HasIndex("TenantId", "Codigo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_equipos_tenant_codigo");
+
                     b.ToTable("equipos", "goalflow");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.EquipoTorneo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("EquipoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("equipo_id");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("estado");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TorneoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("torneo_id");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "TorneoId", "Id")
+                        .HasName("ak_equipos_torneo_tenant_torneo_id");
+
+                    b.HasIndex("TenantId", "EquipoId");
+
+                    b.HasIndex("TenantId", "TorneoId", "EquipoId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_equipos_torneo_tenant_torneo_equipo");
+
+                    b.ToTable("equipos_torneo", "goalflow", t =>
+                        {
+                            t.HasCheckConstraint("ck_equipos_torneo_estado", "estado in ('Inscrito', 'Retirado')");
+                        });
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Fase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("tipo");
+
+                    b.Property<Guid>("TorneoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("torneo_id");
+
+                    b.Property<int>("Vueltas")
+                        .HasColumnType("integer")
+                        .HasColumnName("vueltas");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "TorneoId", "Id")
+                        .HasName("ak_fases_tenant_torneo_id");
+
+                    b.HasIndex("TenantId", "TorneoId", "Orden")
+                        .IsUnique()
+                        .HasDatabaseName("ux_fases_tenant_torneo_orden");
+
+                    b.ToTable("fases", "goalflow", t =>
+                        {
+                            t.HasCheckConstraint("ck_fases_orden", "orden >= 1");
+
+                            t.HasCheckConstraint("ck_fases_tipo", "tipo in ('TodosContraTodos')");
+
+                            t.HasCheckConstraint("ck_fases_vueltas", "vueltas in (1, 2)");
+                        });
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.InscripcionJugador", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("EquipoTorneoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("equipo_torneo_id");
+
+                    b.Property<Guid>("JugadorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("jugador_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TorneoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("torneo_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "JugadorId");
+
+                    b.HasIndex("TenantId", "TorneoId", "EquipoTorneoId");
+
+                    b.HasIndex("TenantId", "TorneoId", "JugadorId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_inscripciones_jugador_tenant_torneo_jugador");
+
+                    b.ToTable("inscripciones_jugador", "goalflow");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Jugador", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("codigo");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("nombre");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_jugadores_tenant_id_id");
+
+                    b.HasIndex("TenantId", "Codigo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_jugadores_tenant_codigo");
+
+                    b.ToTable("jugadores", "goalflow");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Partido", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("estado");
+
+                    b.Property<Guid>("FaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("fase_id");
+
+                    b.Property<int>("Jornada")
+                        .HasColumnType("integer")
+                        .HasColumnName("jornada");
+
+                    b.Property<Guid>("LocalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("local_id");
+
+                    b.Property<DateTimeOffset?>("ProgramadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("programado_en");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TorneoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("torneo_id");
+
+                    b.Property<Guid>("VisitanteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visitante_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TorneoId", "FaseId");
+
+                    b.HasIndex("TenantId", "TorneoId", "LocalId");
+
+                    b.HasIndex("TenantId", "TorneoId", "VisitanteId");
+
+                    b.HasIndex("TenantId", "FaseId", "LocalId", "VisitanteId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_partidos_tenant_fase_local_visitante");
+
+                    b.ToTable("partidos", "goalflow", t =>
+                        {
+                            t.HasCheckConstraint("ck_partidos_estado", "estado in ('Programado', 'Cancelado')");
+
+                            t.HasCheckConstraint("ck_partidos_jornada", "jornada >= 1");
+
+                            t.HasCheckConstraint("ck_partidos_local_distinto_visitante", "local_id <> visitante_id");
+                        });
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Torneo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("codigo");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("nombre");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_torneos_tenant_id_id");
+
+                    b.HasIndex("TenantId", "Codigo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_torneos_tenant_codigo");
+
+                    b.ToTable("torneos", "goalflow");
                 });
 
             modelBuilder.Entity("GoalFlow.Infrastructure.Mensajeria.EntregaEvento", b =>
@@ -196,6 +454,102 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_equipos_ligas");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.EquipoTorneo", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Torneos.Equipo", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EquipoId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_equipos_torneo_equipos");
+
+                    b.HasOne("GoalFlow.Domain.Torneos.Torneo", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_equipos_torneo_torneos");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Fase", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Torneos.Torneo", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_fases_torneos");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.InscripcionJugador", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Torneos.Jugador", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "JugadorId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_inscripciones_jugador_jugadores");
+
+                    b.HasOne("GoalFlow.Domain.Torneos.EquipoTorneo", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId", "EquipoTorneoId")
+                        .HasPrincipalKey("TenantId", "TorneoId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_inscripciones_jugador_equipos_torneo");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Jugador", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Ligas.Liga", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_jugadores_ligas");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Partido", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Torneos.Fase", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId", "FaseId")
+                        .HasPrincipalKey("TenantId", "TorneoId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_partidos_fases");
+
+                    b.HasOne("GoalFlow.Domain.Torneos.EquipoTorneo", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId", "LocalId")
+                        .HasPrincipalKey("TenantId", "TorneoId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_partidos_local");
+
+                    b.HasOne("GoalFlow.Domain.Torneos.EquipoTorneo", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId", "VisitanteId")
+                        .HasPrincipalKey("TenantId", "TorneoId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_partidos_visitante");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.Torneo", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Ligas.Liga", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_torneos_ligas");
                 });
 
             modelBuilder.Entity("GoalFlow.Infrastructure.Mensajeria.EntregaEvento", b =>
