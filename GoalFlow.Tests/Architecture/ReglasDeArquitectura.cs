@@ -29,10 +29,16 @@ public static class ReglasDeArquitectura
 
     /// <summary>T-03: Application solo referencia Domain, System* y Microsoft.Extensions.*.Abstractions.</summary>
     public static ResultadoRegla ApplicationSoloReferenciasPermitidas(Assembly ensamblado) =>
-        ReferenciasPermitidas(ensamblado, n =>
-            n == NombreDomain
-            || EsSystem(n)
-            || Regex.IsMatch(n, @"^Microsoft\.Extensions\..+\.Abstractions$"));
+        ReferenciasPermitidas(ensamblado, ReferenciaPermitidaEnApplication);
+
+    /// <summary>
+    /// Spec 005 R-36: predicado de T-03 sobre nombres de ENSAMBLADO (nunca namespaces). Acepta Domain, System*
+    /// y Microsoft.Extensions.*.Abstractions (p. ej. Microsoft.Extensions.Logging.Abstractions).
+    /// </summary>
+    public static bool ReferenciaPermitidaEnApplication(string nombreDeEnsamblado) =>
+        nombreDeEnsamblado == NombreDomain
+        || EsSystem(nombreDeEnsamblado)
+        || Regex.IsMatch(nombreDeEnsamblado, @"^Microsoft\.Extensions\..+\.Abstractions$");
 
     /// <summary>T-06: el ensamblado de origen referencia al de destino.</summary>
     public static ResultadoRegla Referencia(Assembly origen, string nombreDestino)

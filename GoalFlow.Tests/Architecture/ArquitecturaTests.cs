@@ -52,3 +52,16 @@ public class ArquitecturaTests
         Cumple(ReglasDeArquitectura.TieneTipos(Api));
     }
 }
+
+/// <summary>Spec 005 T-26 (a): tabla de casos del predicado de T-03.</summary>
+public class PredicadoDeApplicationTests
+{
+    [Theory]
+    [InlineData("Microsoft.Extensions.Logging.Abstractions", true)]
+    [InlineData("Microsoft.Extensions.Logging", false)]
+    [InlineData("Microsoft.Extensions.Logging.Console", false)]
+    [InlineData("Microsoft.EntityFrameworkCore", false)]
+    [InlineData("Npgsql", false)]
+    public void El_predicado_acepta_solo_las_abstracciones_de_logging(string ensamblado, bool esperado) =>
+        Assert.Equal(esperado, ReglasDeArquitectura.ReferenciaPermitidaEnApplication(ensamblado));
+}
