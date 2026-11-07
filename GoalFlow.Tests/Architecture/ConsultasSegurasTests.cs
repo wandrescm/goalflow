@@ -33,13 +33,13 @@ public class ConsultasSegurasTests
         var resultado = ReglasDeConsultas.Analizar(ReglasDeConsultas.CargarTipos(Produccion));
 
         var encontrados = resultado.Permitidos
-            .Select(s => (Tipo: s.TipoExterno.Split('.')[^1], s.Familia))
+            .Select(s => (Tipo: s.TipoExterno, s.Familia))
             .ToHashSet();
         var esperados = new HashSet<(string, FamiliaDeConsulta)>
         {
-            ("InterceptorDeTransacciones", FamiliaDeConsulta.F3),
-            ("Inicial", FamiliaDeConsulta.F4),
-            ("EntregasEventos", FamiliaDeConsulta.F4),
+            (ReglasDeConsultas.TipoDelInterceptor, FamiliaDeConsulta.F3),
+            ("GoalFlow.Infrastructure.Persistencia.Migraciones.Inicial", FamiliaDeConsulta.F4),
+            ("GoalFlow.Infrastructure.Persistencia.Migraciones.EntregasEventos", FamiliaDeConsulta.F4),
         };
 
         Assert.True(esperados.SetEquals(encontrados),
