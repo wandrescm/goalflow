@@ -77,12 +77,14 @@ public static class ReglasDeConsultas
         "System.Data.Common.DbCommand",
         "System.Data.Common.DbBatch",
         "System.Data.Common.DbBatchCommand",
+        "System.Data.IDbCommand",
     ];
 
     private static readonly HashSet<string> BasesDeFabricas =
     [
         "System.Data.Common.DbConnection",
         "System.Data.Common.DbDataSource",
+        "System.Data.IDbConnection",
     ];
 
     private static readonly HashSet<string> CopiaDeNpgsql =
@@ -109,7 +111,8 @@ public static class ReglasDeConsultas
                 foreach (var instruccion in metodo.Body.Instructions)
                 {
                     if (instruccion.OpCode.Code is not (Mono.Cecil.Cil.Code.Call or Mono.Cecil.Cil.Code.Callvirt
-                        or Mono.Cecil.Cil.Code.Newobj or Mono.Cecil.Cil.Code.Ldftn))
+                        or Mono.Cecil.Cil.Code.Newobj or Mono.Cecil.Cil.Code.Ldftn
+                        or Mono.Cecil.Cil.Code.Ldvirtftn or Mono.Cecil.Cil.Code.Ldtoken))
                         continue;
                     if (instruccion.Operand is not MethodReference llamado) continue;
 
