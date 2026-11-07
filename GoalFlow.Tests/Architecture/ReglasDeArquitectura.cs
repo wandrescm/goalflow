@@ -29,10 +29,16 @@ public static class ReglasDeArquitectura
 
     /// <summary>T-03: Application solo referencia Domain, System* y Microsoft.Extensions.*.Abstractions.</summary>
     public static ResultadoRegla ApplicationSoloReferenciasPermitidas(Assembly ensamblado) =>
-        ReferenciasPermitidas(ensamblado, n =>
-            n == NombreDomain
-            || EsSystem(n)
-            || Regex.IsMatch(n, @"^Microsoft\.Extensions\..+\.Abstractions$"));
+        ReferenciasPermitidas(ensamblado, ReferenciaPermitidaEnApplication);
+
+    /// <summary>
+    /// Spec 005 R-36: predicado de T-03 sobre nombres de ENSAMBLADO (nunca namespaces). Acepta Domain, System*
+    /// y Microsoft.Extensions.*.Abstractions (p. ej. Microsoft.Extensions.Logging.Abstractions).
+    /// </summary>
+    public static bool ReferenciaPermitidaEnApplication(string nombreDeEnsamblado) =>
+        nombreDeEnsamblado == NombreDomain
+        || EsSystem(nombreDeEnsamblado)
+        || Regex.IsMatch(nombreDeEnsamblado, @"^Microsoft\.Extensions\..+\.Abstractions$");
 
     /// <summary>T-06: el ensamblado de origen referencia al de destino.</summary>
     public static ResultadoRegla Referencia(Assembly origen, string nombreDestino)
@@ -120,6 +126,18 @@ public static class ReglasDeArquitectura
 
         return GrafoDeModulos(conCompartidos, deModulos, raices);
     }
+
+    /// <summary>
+    /// Spec 005 R-33 (T-24): módulos que la regla de producción evalúa como origen en una capa,
+    /// es decir, los primeros segmentos de namespace bajo <paramref name="raiz"/> que no son compartidos.
+    /// </summary>
+    public static IReadOnlySet<string> ModulosEvaluados(
+        IEnumerable<Type> tipos, string raiz, IReadOnlyCollection<string> compartidos) =>
+        tipos
+            .Select(t => ModuloDe(t, [raiz]))
+            .Where(m => m is not null && !compartidos.Contains(m.Value.Modulo))
+            .Select(m => m!.Value.Modulo)
+            .ToHashSet(StringComparer.Ordinal);
 
     // ---- Tenancy mínimo (Spec 002 T-01) ----
 
