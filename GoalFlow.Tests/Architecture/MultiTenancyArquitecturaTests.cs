@@ -61,6 +61,19 @@ public class MultiTenancyArquitecturaTests
         Assert.True(resultado.Cumple, resultado.ToString());
     }
 
+    [Theory] // Spec 005 T-24 (R-33)
+    [InlineData(ReglasDeArquitectura.NombreDomain, new[] { "Ligas", "Tenancy", "Torneos" })]
+    [InlineData(ReglasDeArquitectura.NombreApplication, new[] { "Ligas", "Tenancy", "Torneos" })]
+    [InlineData(ReglasDeArquitectura.NombreInfrastructure, new[] { "Ligas", "Torneos" })]
+    public void T24_el_grafo_evalua_exactamente_los_modulos_esperados_por_capa(string raiz, string[] esperados)
+    {
+        var tipos = Produccion.SelectMany(a => a.GetTypes());
+
+        var evaluados = ReglasDeArquitectura.ModulosEvaluados(tipos, raiz, TablaDeModulos.NamespacesCompartidos);
+
+        Assert.True(evaluados.SetEquals(esperados), $"{raiz}: {string.Join(", ", evaluados.Order())}");
+    }
+
     [Fact] // Spec 002 T-02 (canario)
     public void T02_canario_Torneos_usa_entidad_de_Ligas()
     {

@@ -121,6 +121,18 @@ public static class ReglasDeArquitectura
         return GrafoDeModulos(conCompartidos, deModulos, raices);
     }
 
+    /// <summary>
+    /// Spec 005 R-33 (T-24): módulos que la regla de producción evalúa como origen en una capa,
+    /// es decir, los primeros segmentos de namespace bajo <paramref name="raiz"/> que no son compartidos.
+    /// </summary>
+    public static IReadOnlySet<string> ModulosEvaluados(
+        IEnumerable<Type> tipos, string raiz, IReadOnlyCollection<string> compartidos) =>
+        tipos
+            .Select(t => ModuloDe(t, [raiz]))
+            .Where(m => m is not null && !compartidos.Contains(m.Value.Modulo))
+            .Select(m => m!.Value.Modulo)
+            .ToHashSet(StringComparer.Ordinal);
+
     // ---- Tenancy mínimo (Spec 002 T-01) ----
 
     /// <summary>Un namespace Tenancy solo admite TenantId, ITenantContext y la excepción de tenant ausente.</summary>
