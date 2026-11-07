@@ -12,8 +12,15 @@ public class EquipoTorneo(Guid id, TenantId tenantId, Guid torneoId, Guid equipo
     public EstadoDeParticipacion Estado { get; private set; } = EstadoDeParticipacion.Inscrito;
 
     /// <returns><c>true</c> si el estado cambió.</returns>
-    public bool Retirar() => false;
+    public bool Retirar() => Cambiar(EstadoDeParticipacion.Retirado);
 
     /// <returns><c>true</c> si el estado cambió.</returns>
-    public bool Reinscribir() => false;
+    public bool Reinscribir() => Cambiar(EstadoDeParticipacion.Inscrito);
+
+    private bool Cambiar(EstadoDeParticipacion estado)
+    {
+        if (Estado == estado) return false;
+        Estado = estado;
+        return true;
+    }
 }

@@ -99,7 +99,7 @@ public class ValidadorDeFixtureTests
             " ",
             [new FaseDescripcion(0, nameof(TipoDeFase.TodosContraTodos), 3)],
             [new EquipoDescripcion("EQ 1", "Equipo Uno", false, [new JugadorDescripcion("J-1", "")]), E("B")],
-            [new PartidoDescripcion(1, 0, "B", "B", null, false)]);
+            [new PartidoDescripcion(0, 0, "B", "B", null, false)]);
 
         var errores = ValidadorDeFixture.Validar(fixture);
 
