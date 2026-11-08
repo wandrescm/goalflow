@@ -262,6 +262,38 @@ public static class ReglasDeArquitectura
         return ResultadoRegla.Desde(violaciones);
     }
 
+    /// <param name="Tipo"><c>fk</c> o <c>unico</c>.</param>
+    /// <param name="ColumnasReferenciadas">Solo para <c>fk</c>: las columnas de la tabla principal.</param>
+    public sealed record FilaDeClave(
+        string Tipo, string Nombre, string Tabla, IReadOnlyList<string> Columnas, IReadOnlyList<string>? ColumnasReferenciadas = null);
+
+    /// <summary>
+    /// Spec 005 R-35 (T-33, C-22), sobre el catálogo de la base migrada: toda clave foránea entre dos tablas con
+    /// tenant_id lo incluye en ambos lados, y todo índice único de una tabla con tenant_id lo incluye. Es la que ve una
+    /// migración editada a mano mientras el modelo y el snapshot de EF Core siguen intactos.
+    /// </summary>
+    public static ResultadoRegla ClavesDelCatalogoIncluyenTenant(IEnumerable<FilaDeClave> filas)
+    {
+        const string Tenant = "tenant_id";
+        var violaciones = new List<string>();
+        foreach (var fila in filas)
+        {
+            if (fila.Tipo == "fk")
+            {
+                if (!fila.Columnas.Contains(Tenant))
+                    violaciones.Add($"{fila.Nombre}: la clave foránea de {fila.Tabla} no incluye tenant_id");
+                else if (fila.ColumnasReferenciadas is null || !fila.ColumnasReferenciadas.Contains(Tenant))
+                    violaciones.Add($"{fila.Nombre}: la clave foránea de {fila.Tabla} no referencia tenant_id en la tabla principal");
+            }
+            else if (!fila.Columnas.Contains(Tenant))
+            {
+                violaciones.Add($"{fila.Nombre}: el índice único de {fila.Tabla} no incluye tenant_id");
+            }
+        }
+
+        return ResultadoRegla.Desde(violaciones);
+    }
+
     /// <summary>Spec 004 R-42 (T-28): una caché de aplicación registrada exige un SizeLimit explícito.</summary>
     public static ResultadoRegla CachesConLimite(IServiceCollection registros, IServiceProvider proveedor)
     {
