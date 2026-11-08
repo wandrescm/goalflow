@@ -10,7 +10,7 @@ public sealed record GrafoDeTorneos(
     Guid TorneoA, Guid FaseA, Guid ParticipacionA1, Guid ParticipacionA2, Guid JugadorA,
     Guid TorneoA2, Guid FaseA2, Guid ParticipacionA2DelOtroTorneo,
     Guid TorneoB, Guid FaseB, Guid ParticipacionB1, Guid ParticipacionB2, Guid JugadorB,
-    Guid EquipoB)
+    Guid EquipoB, Guid EquipoA)
 {
     private static readonly SemaphoreSlim Candado = new(1, 1);
     private static readonly Dictionary<string, GrafoDeTorneos> PorBase = [];
@@ -26,9 +26,10 @@ public sealed record GrafoDeTorneos(
                 Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
                 Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
                 Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-                Guid.NewGuid());
+                Guid.NewGuid(), Guid.NewGuid());
             var (a, b) = (BaseDeAislamiento.LigaA.Value, BaseDeAislamiento.LigaB.Value);
-            var (equipoA1, equipoA2, equipoB2) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+            var (equipoA2, equipoB2) = (Guid.NewGuid(), Guid.NewGuid());
+            var equipoA1 = g.EquipoA;
             var sufijo = Guid.NewGuid().ToString("N")[..8];
 
             await db.EjecutarComoSuperusuario($"""

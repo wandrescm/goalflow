@@ -111,6 +111,52 @@ public class ClavesDeTorneosTests(BaseDeAislamiento db)
         await transaccion.RollbackAsync();
     }
 
+    /// <summary>
+    /// Un caso por cada clave foránea compuesta entre tablas con tenant de la migración (Spec 005 T-15, C-22): solo la
+    /// columna de esa clave apunta a una fila de B; las demás apuntan a filas válidas de A. Se afirma también el nombre
+    /// de la restricción que dispara, para que una clave hermana no oculte la que falta.
+    /// </summary>
+    [Theory]
+    [InlineData("fases → torneos", "fk_fases_torneos")]
+    [InlineData("equipos_torneo → torneos", "fk_equipos_torneo_torneos")]
+    [InlineData("equipos_torneo → equipos", "fk_equipos_torneo_equipos")]
+    [InlineData("inscripciones_jugador → equipos_torneo", "fk_inscripciones_jugador_equipos_torneo")]
+    [InlineData("inscripciones_jugador → jugadores", "fk_inscripciones_jugador_jugadores")]
+    [InlineData("partidos → fases", "fk_partidos_fases")]
+    [InlineData("partidos → equipos_torneo (local)", "fk_partidos_local")]
+    [InlineData("partidos → equipos_torneo (visitante)", "fk_partidos_visitante")]
+    public async Task T15_cada_clave_foranea_compuesta_rechaza_una_referencia_a_B_con_23503(string clave, string restriccion)
+    {
+        var g = await GrafoDeTorneos.ObtenerAsync(db);
+        var a = LigaA.Value;
+        var sql = clave switch
+        {
+            "fases → torneos" => $"""
+                insert into goalflow.fases (id, tenant_id, torneo_id, orden, tipo, vueltas)
+                values ('{Guid.NewGuid()}', '{a}', '{g.TorneoB}', 98, 'TodosContraTodos', 1)
+                """,
+            "equipos_torneo → torneos" => $"""
+                insert into goalflow.equipos_torneo (id, tenant_id, torneo_id, equipo_id, estado)
+                values ('{Guid.NewGuid()}', '{a}', '{g.TorneoB}', '{g.EquipoA}', 'Inscrito')
+                """,
+            "equipos_torneo → equipos" => $"""
+                insert into goalflow.equipos_torneo (id, tenant_id, torneo_id, equipo_id, estado)
+                values ('{Guid.NewGuid()}', '{a}', '{g.TorneoA}', '{g.EquipoB}', 'Inscrito')
+                """,
+            "inscripciones_jugador → equipos_torneo" => Inscripcion(a, g.TorneoA, g.ParticipacionB1, g.JugadorA),
+            "inscripciones_jugador → jugadores" => Inscripcion(a, g.TorneoA, g.ParticipacionA1, g.JugadorB),
+            "partidos → fases" => Partido(a, g.TorneoA, g.FaseB, g.ParticipacionA1, g.ParticipacionA2),
+            "partidos → equipos_torneo (local)" => Partido(a, g.TorneoA, g.FaseA, g.ParticipacionB1, g.ParticipacionA2),
+            "partidos → equipos_torneo (visitante)" => Partido(a, g.TorneoA, g.FaseA, g.ParticipacionA1, g.ParticipacionB1),
+            _ => throw new InvalidOperationException(clave),
+        };
+
+        var error = await RechazadoParaLigaA(sql);
+
+        Assert.Equal(ViolaClaveForanea, error.SqlState);
+        Assert.Equal(restriccion, error.ConstraintName);
+    }
+
     // ---- T-16 (R-07, R-05, R-06): la FK incluye torneo_id; unicidad y checks ----
 
     [Fact]
