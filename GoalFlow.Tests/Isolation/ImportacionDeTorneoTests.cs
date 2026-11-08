@@ -351,6 +351,7 @@ public class ImportacionDeTorneoTests(BaseDeAislamiento db)
 
     [Theory] // T-11
     [InlineData("mas_de_1_mib")]
+    [InlineData("mas_de_1_mib_sin_content_length")]
     [InlineData("65_equipos")]
     public async Task T11_los_limites_de_tamano_responden_413_y_422(string caso)
     {
@@ -359,7 +360,17 @@ public class ImportacionDeTorneoTests(BaseDeAislamiento db)
         var (p, codigo) = (Prefijo(), $"T11-{Prefijo()}");
 
         HttpResponseMessage respuesta;
-        if (caso == "mas_de_1_mib")
+        if (caso == "mas_de_1_mib_sin_content_length")
+        {
+            // Cuerpo troceado (chunked): sin Content-Length la primera guarda no puede rechazarlo (Spec 005 C-23).
+            var grande = Basico(p) with { Nombre = new string('N', 1024 * 1024 + 512) };
+            var peticion = Peticion("liga-a", codigo, string.Empty, UsuarioU1);
+            peticion.Content = new StreamContent(new FlujoSinLongitud(JsonSerializer.SerializeToUtf8Bytes(grande, Json)));
+            peticion.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            Assert.Null(peticion.Content.Headers.ContentLength);
+            respuesta = await cliente.SendAsync(peticion);
+        }
+        else if (caso == "mas_de_1_mib")
         {
             var grande = Basico(p) with { Nombre = new string('N', 1024 * 1024 + 512) };
             respuesta = await ImportarTexto(cliente, codigo, JsonSerializer.Serialize(grande, Json));
@@ -370,7 +381,7 @@ public class ImportacionDeTorneoTests(BaseDeAislamiento db)
             respuesta = await Importar(cliente, "liga-a", codigo, Basico(p) with { Equipos = equipos, Partidos = [] });
         }
 
-        Assert.Equal(caso == "mas_de_1_mib" ? HttpStatusCode.RequestEntityTooLarge : HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
+        Assert.Equal(caso.StartsWith("mas_de_1_mib", StringComparison.Ordinal) ? HttpStatusCode.RequestEntityTooLarge : HttpStatusCode.UnprocessableEntity, respuesta.StatusCode);
         Assert.Equal(0, await TorneosConCodigo(codigo));
     }
 
@@ -557,4 +568,42 @@ public class ImportacionDeTorneoTests(BaseDeAislamiento db)
             where t.codigo = '{codigo}' and p.estado = 'Cancelado'
             """));
     }
+}
+
+/// <summary>Flujo que no informa su longitud ni permite posicionarse: la petición que lo envía va troceada (chunked).</summary>
+internal sealed class FlujoSinLongitud(byte[] datos) : Stream
+{
+    private readonly MemoryStream _interno = new(datos);
+
+    public override bool CanRead => true;
+
+    public override bool CanSeek => false;
+
+    public override bool CanWrite => false;
+
+    public override long Length => throw new NotSupportedException();
+
+    public override long Position
+    {
+        get => throw new NotSupportedException();
+        set => throw new NotSupportedException();
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => _interno.Read(buffer, offset, count);
+
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        _interno.ReadAsync(buffer, offset, count, cancellationToken);
+
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+        _interno.ReadAsync(buffer, cancellationToken);
+
+    public override void Flush()
+    {
+    }
+
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+    public override void SetLength(long value) => throw new NotSupportedException();
+
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
