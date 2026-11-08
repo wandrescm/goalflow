@@ -4,6 +4,7 @@ using GoalFlow.Domain.Ligas;
 using GoalFlow.Domain.Tenancy;
 using GoalFlow.Domain.Torneos;
 using GoalFlow.Infrastructure.Mensajeria;
+using GoalFlow.Infrastructure.Torneos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Npgsql;
@@ -19,6 +20,12 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
     public DbSet<AdminLiga> AdminsLiga => Set<AdminLiga>();
     public DbSet<Equipo> Equipos => Set<Equipo>();
     public DbSet<EntregaEvento> EntregasEventos => Set<EntregaEvento>();
+    public DbSet<Torneo> Torneos => Set<Torneo>();
+    public DbSet<Fase> Fases => Set<Fase>();
+    public DbSet<Jugador> Jugadores => Set<Jugador>();
+    public DbSet<EquipoTorneo> EquiposTorneo => Set<EquipoTorneo>();
+    public DbSet<InscripcionJugador> InscripcionesJugador => Set<InscripcionJugador>();
+    public DbSet<Partido> Partidos => Set<Partido>();
 
     // El filtro referencia este miembro para evaluarse por consulta; EF Core cachea el modelo (ADR-14 §2.2).
     private TenantId TenantActual => tenantContext.Current;
@@ -57,6 +64,7 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
             equipo.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
             ColumnaDeTenant(equipo.Property(e => e.TenantId), "tenant_id");
             equipo.Property(e => e.Nombre).HasColumnName("nombre");
+            ConfiguracionDeTorneos.Equipo(equipo);
             equipo.HasIndex(e => e.TenantId).HasDatabaseName("ix_equipos_tenant_id");
             equipo.HasOne<Liga>().WithMany().HasForeignKey(e => e.TenantId)
                 .HasConstraintName("fk_equipos_ligas").OnDelete(DeleteBehavior.Restrict);
@@ -67,6 +75,38 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
         {
             ConfiguracionDeEntregaEvento.Configurar(entrega);
             entrega.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+
+        // Entidades de torneo (Spec 005). El filtro referencia TenantActual, nunca una variable local.
+        modelBuilder.Entity<Torneo>(torneo =>
+        {
+            ConfiguracionDeTorneos.Torneo(torneo);
+            torneo.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<Fase>(fase =>
+        {
+            ConfiguracionDeTorneos.Fase(fase);
+            fase.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<Jugador>(jugador =>
+        {
+            ConfiguracionDeTorneos.Jugador(jugador);
+            jugador.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<EquipoTorneo>(participacion =>
+        {
+            ConfiguracionDeTorneos.EquipoTorneo(participacion);
+            participacion.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<InscripcionJugador>(inscripcion =>
+        {
+            ConfiguracionDeTorneos.InscripcionJugador(inscripcion);
+            inscripcion.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<Partido>(partido =>
+        {
+            ConfiguracionDeTorneos.Partido(partido);
+            partido.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
         });
     }
 

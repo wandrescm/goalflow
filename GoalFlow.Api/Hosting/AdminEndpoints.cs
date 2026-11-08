@@ -15,6 +15,8 @@ public static class AdminEndpoints
 
         admin.MapGet("/sesion", (HttpContext context) => Results.Ok(context.Features.Get<SesionDeAdmin>()));
 
+        admin.MapImportacionDeTorneo();
+
         return app;
     }
 

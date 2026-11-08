@@ -198,12 +198,49 @@ public static class ReglasDeArquitectura
         return ResultadoRegla.Desde(violaciones);
     }
 
+    /// <summary>Spec 005 R-34 (T-25): las entidades que la regla del filtro evalúa; sus pruebas afirman el conjunto exacto.</summary>
+    public static IReadOnlyList<IEntityType> EntidadesEvaluadasPorElFiltro(IModel modelo, IReadOnlyCollection<string> excepciones) =>
+        [.. modelo.GetEntityTypes()
+            .Where(e => e.FindProperty("TenantId") is not null)
+            .Where(e => !excepciones.Contains(e.ClrType.Name))];
+
+    /// <summary>
+    /// Spec 005 R-35 (T-23), ADR-14 §2.11 reglas 1 y 2: toda clave foránea entre entidades con TenantId lo incluye,
+    /// y todo índice único o clave alterna de una entidad con TenantId lo incluye. La clave primaria queda fuera:
+    /// es el identificador generado por el servidor (R-09).
+    /// </summary>
+    public static ResultadoRegla ClavesYUnicidadIncluyenTenant(IModel modelo)
+    {
+        static bool IncluyeTenant(IReadOnlyList<IProperty> propiedades) => propiedades.Any(p => p.Name == "TenantId");
+
+        var violaciones = new List<string>();
+        foreach (var entidad in modelo.GetEntityTypes().Where(e => e.FindProperty("TenantId") is not null))
+        {
+            var nombre = entidad.ClrType.Name;
+
+            foreach (var fk in entidad.GetDeclaredForeignKeys())
+            {
+                if (fk.PrincipalEntityType.FindProperty("TenantId") is null) continue;
+                if (!IncluyeTenant(fk.Properties))
+                    violaciones.Add($"{nombre}: la clave foránea hacia {fk.PrincipalEntityType.ClrType.Name} no incluye TenantId");
+            }
+
+            foreach (var indice in entidad.GetDeclaredIndexes().Where(i => i.IsUnique))
+                if (!IncluyeTenant(indice.Properties))
+                    violaciones.Add($"{nombre}: el índice único ({string.Join(", ", indice.Properties.Select(p => p.Name))}) no incluye TenantId");
+
+            foreach (var clave in entidad.GetDeclaredKeys().Where(k => !ReferenceEquals(k, entidad.FindPrimaryKey())))
+                if (!IncluyeTenant(clave.Properties))
+                    violaciones.Add($"{nombre}: la clave alterna ({string.Join(", ", clave.Properties.Select(p => p.Name))}) no incluye TenantId");
+        }
+
+        return ResultadoRegla.Desde(violaciones);
+    }
+
     /// <summary>Spec 004 R-40 (T-26): toda entidad del modelo con TenantId tiene el filtro con nombre Tenant.</summary>
     public static ResultadoRegla EntidadesConTenantTienenFiltro(IModel modelo, IReadOnlyCollection<string> excepciones)
     {
-        var violaciones = modelo.GetEntityTypes()
-            .Where(e => e.FindProperty("TenantId") is not null)
-            .Where(e => !excepciones.Contains(e.ClrType.Name))
+        var violaciones = EntidadesEvaluadasPorElFiltro(modelo, excepciones)
             .Where(e => e.FindDeclaredQueryFilter("Tenant") is null)
             .Select(e => $"{e.ClrType.Name} tiene TenantId y no tiene el filtro Tenant")
             .ToList();
@@ -220,6 +257,38 @@ public static class ReglasDeArquitectura
         {
             if (!tabla.RlsActivo) violaciones.Add($"{tabla.Tabla} tiene tenant_id y no tiene RLS");
             else if (tabla.Politicas == 0) violaciones.Add($"{tabla.Tabla} tiene RLS pero ninguna política");
+        }
+
+        return ResultadoRegla.Desde(violaciones);
+    }
+
+    /// <param name="Tipo"><c>fk</c> o <c>unico</c>.</param>
+    /// <param name="ColumnasReferenciadas">Solo para <c>fk</c>: las columnas de la tabla principal.</param>
+    public sealed record FilaDeClave(
+        string Tipo, string Nombre, string Tabla, IReadOnlyList<string> Columnas, IReadOnlyList<string>? ColumnasReferenciadas = null);
+
+    /// <summary>
+    /// Spec 005 R-35 (T-33, C-22), sobre el catálogo de la base migrada: toda clave foránea entre dos tablas con
+    /// tenant_id lo incluye en ambos lados, y todo índice único de una tabla con tenant_id lo incluye. Es la que ve una
+    /// migración editada a mano mientras el modelo y el snapshot de EF Core siguen intactos.
+    /// </summary>
+    public static ResultadoRegla ClavesDelCatalogoIncluyenTenant(IEnumerable<FilaDeClave> filas)
+    {
+        const string Tenant = "tenant_id";
+        var violaciones = new List<string>();
+        foreach (var fila in filas)
+        {
+            if (fila.Tipo == "fk")
+            {
+                if (!fila.Columnas.Contains(Tenant))
+                    violaciones.Add($"{fila.Nombre}: la clave foránea de {fila.Tabla} no incluye tenant_id");
+                else if (fila.ColumnasReferenciadas is null || !fila.ColumnasReferenciadas.Contains(Tenant))
+                    violaciones.Add($"{fila.Nombre}: la clave foránea de {fila.Tabla} no referencia tenant_id en la tabla principal");
+            }
+            else if (!fila.Columnas.Contains(Tenant))
+            {
+                violaciones.Add($"{fila.Nombre}: el índice único de {fila.Tabla} no incluye tenant_id");
+            }
         }
 
         return ResultadoRegla.Desde(violaciones);

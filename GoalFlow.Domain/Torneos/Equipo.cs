@@ -2,10 +2,28 @@ using GoalFlow.Domain.Tenancy;
 
 namespace GoalFlow.Domain.Torneos;
 
-/// <summary>Forma mínima para probar el aislamiento; la extiende la Spec del modelo de dominio.</summary>
-public class Equipo(Guid id, TenantId tenantId, string nombre)
+/// <summary>Equipo de la liga. Su código es la clave natural estable entre importaciones (ADR-06 §2.4).</summary>
+public class Equipo
 {
-    public Guid Id { get; private set; } = id;
-    public TenantId TenantId { get; private set; } = tenantId;
-    public string Nombre { get; private set; } = nombre;
+    public Equipo(Guid id, TenantId tenantId, string codigo, string nombre)
+    {
+        Id = id;
+        TenantId = tenantId;
+        Codigo = Reglas.ExigirCodigo(codigo);
+        Nombre = Reglas.ExigirNombre(nombre);
+    }
+
+    public Guid Id { get; private set; }
+    public TenantId TenantId { get; private set; }
+    public string Codigo { get; private set; }
+    public string Nombre { get; private set; }
+
+    /// <returns><c>true</c> si el nombre cambió.</returns>
+    public bool Renombrar(string nombre)
+    {
+        var nuevo = Reglas.ExigirNombre(nombre);
+        if (nuevo == Nombre) return false;
+        Nombre = nuevo;
+        return true;
+    }
 }
