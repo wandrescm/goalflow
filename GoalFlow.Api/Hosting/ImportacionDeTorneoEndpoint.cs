@@ -42,7 +42,8 @@ public static class ImportacionDeTorneoEndpoint
         {
             if (!FormatoDeCodigos.EsValido(codigo)) return Results.BadRequest();
 
-            var cuerpo = await LeerCuerpoAsync(http.Request, cancellationToken);
+            var cuerpo = await LectorDeCuerpoLimitado.LeerAsync(
+                http.Request.Body, http.Request.ContentLength, LimiteDelCuerpo, cancellationToken);
             if (cuerpo is null) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
             var fixture = Interpretar(cuerpo);
@@ -68,23 +69,6 @@ public static class ImportacionDeTorneoEndpoint
         });
 
         return admin;
-    }
-
-    /// <returns>Los bytes del cuerpo, o <c>null</c> si superan el límite.</returns>
-    private static async Task<byte[]?> LeerCuerpoAsync(HttpRequest peticion, CancellationToken cancellationToken)
-    {
-        if (peticion.ContentLength > LimiteDelCuerpo) return null;
-
-        using var memoria = new MemoryStream();
-        var buffer = new byte[16 * 1024];
-        int leidos;
-        while ((leidos = await peticion.Body.ReadAsync(buffer, cancellationToken)) > 0)
-        {
-            if (memoria.Length + leidos > LimiteDelCuerpo) return null;
-            memoria.Write(buffer, 0, leidos);
-        }
-
-        return memoria.ToArray();
     }
 
     /// <returns>El fixture, o <c>null</c> si el cuerpo no es JSON válido del contrato (400).</returns>
