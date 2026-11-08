@@ -1,6 +1,6 @@
 # Spec 005: Tournament domain model, fixture import and query-safety rules
 
-- **Status:** Approved (2026-11-06, after two owner reviews)
+- **Status:** Implemented (2026-11-07). PR A #12 (merge `d0a5354`) and PR B #13 (merge `726d664`), verified in production on 2026-11-07
 - **Date:** 2026-11-06 (S3D1, H09; revised the same day after the owner's review: R-05, R-06, R-21, R-24, R-25, R-32, R-36; R-38 to R-40; T-05, T-26, T-29 to T-31; C-09, C-10, C-13 to C-15; §8 delivery in two PRs). PR A mutation audit (2026-11-06): R-29, R-30; T-19, T-20; C-17, C-18. PR B review and mutation audit (2026-11-07): R-35; T-11, T-15, T-33; C-19 to C-24. Second review: R-13 (f), R-14, R-18, R-19, R-33, R-39; T-05, T-19, T-24, T-29, T-31, T-32; C-15, C-16)
 - **Related:** ADR-06 (tournament domain model), ADR-14 (amended §2.11: keys and relationships), ADR-03 (modules), ADR-01 (Admin routes), Spec 002, Spec 004
 - **Effort:** Medium (Sonnet); the IL scanner of §3.5 may use `opusplan`
@@ -176,12 +176,12 @@ An Admin can load a complete tournament of their league with one idempotent requ
 
 ## 8. Definition of done
 
-- [ ] All tests above pass and none was modified to make it pass (C-09 is the only allowed setup change).
-- [ ] Every requirement maps to at least one test (see validation table).
-- [ ] No new warnings; no secrets in the diff; no raw SQL outside the migration.
-- [ ] ADR-06 accepted; ADR-14 amended (§2.11).
-- [ ] Migration script applied by the owner as `postgres` before the merge.
-- [ ] PR description contains the validation table with real results, the observed red of each test-first commit, and the mutation audit.
+- [x] All tests above pass and none was modified to make it pass. The allowed setup changes are C-09 and C-21, and the T-19 extension.
+- [x] Every requirement maps to at least one test (see §9).
+- [x] No new warnings; no secrets in the diff; no raw SQL outside the migration (T-18 and T-19).
+- [x] ADR-06 accepted; ADR-14 amended (§2.11).
+- [x] Migration script applied by the owner as `postgres` before the merge of PR B (2026-11-07).
+- [x] PR descriptions contain the validation table with real results, the observed red of each test-first commit, and the mutation audits.
 
 ### 8.1 Delivery in two PRs (owner's decision, 2026-11-06)
 
@@ -192,13 +192,36 @@ An Admin can load a complete tournament of their league with one idempotent requ
 
 A is merged before B starts; B is built on the updated `main`. Neither PR is merged without the owner's review of its canaries and diff.
 
-## 9. Validation (filled in the closing commit)
+## 9. Validation
 
-> While the PR is under review, this evidence lives in the PR description. After the production check, a closing docs commit fills this table.
+Final suite: **325 tests, all green**, 0 warnings (163 before Spec 005). Evidence is in the descriptions of PR #12 and PR #13.
 
 | Requirement | Test | Result | Evidence |
 | --- | --- | --- | --- |
-| R-01 … R-40 | T-01 … T-33 | | |
+| R-01, R-02, R-34 | T-25 (exact sets of entities and tables), Spec 004 T-26 and T-27 | Pass | PR #13 |
+| R-03 to R-08 | T-16, T-23, T-33 | Pass | PR #13; M2 to M4 and M1′ detected |
+| R-09, R-15 | T-10 | Pass | PR #13; M13 detected |
+| R-10 | T-17 (7 tables) | Pass | PR #13; M6 detected; production check 2 |
+| R-11 | T-04 (`-05:00` stored as `20:00:00Z`) | Pass | PR #13 |
+| R-12 | T-01 | Pass | PR #13 |
+| R-13 (a) to (h), R-39 | T-02, T-03, T-32 | Pass | PR #13; M11, M12 and M15 detected |
+| R-14, R-18, R-19 | T-04, T-06, T-29, T-31 | Pass | PR #13; M7 detected |
+| R-16 | T-11 (a) and (b) | Pass | PR #13; M14″ detected (C-23) |
+| R-17, R-24 | T-09 | Pass | PR #13 |
+| R-20 | T-05 (snapshot of every table: rows and `xmin`) | Pass | PR #13; M8′ detected (C-24) |
+| R-21, R-22 | T-07, T-08 | Pass | PR #13; M9 and M10 detected |
+| R-23 | T-13 | Pass | PR #13 |
+| R-25 | T-28 | Pass | PR #13 |
+| R-26, R-28 | T-14 | Pass | PR #13; M2 and M5 detected |
+| R-27 | T-15 (one case per composite foreign key, plus canary) | Pass | PR #13; M1′ detected (C-22) |
+| R-29 to R-31 | T-18, T-20, T-21, T-22 | Pass | PR #12; 14 + 4 mutations, none surviving (C-17, C-18) |
+| R-32 | T-19 (full type names) | Pass | PR #12 and #13 |
+| R-33 | T-24 | Pass | PR #12; M12 detected |
+| R-35 | T-23 (model) and T-33 (migrated database) | Pass | PR #13; M3, M4 and M1′ detected |
+| R-36 | T-26 (a) and (b) | Pass | PR #12 and #13; M13 of PR A detected |
+| R-37 | T-27 | Pass | PR #12; M11 of PR A detected |
+| R-38, R-40 | T-29, T-30, T-31 | Pass | PR #13; M15 detected |
+| Production | Catalog checks as `postgres` (2026-11-07) | Pass | Migration `20261107174504_TorneosYPartidos` recorded; 7 tables with RLS, 1 policy and no `DELETE` for `goalflow_app`; 8 composite foreign keys include `tenant_id`; Render *Live* with `726d664` |
 
 ## 10. Risks and open items
 
@@ -206,3 +229,4 @@ A is merged before B starts; B is built on the updated `main`. Neither PR is mer
 - **Spec 006 obligation:** the import must reject changes to a match that is not `Programado` (`409`).
 - **Real data load (H10):** only after each Admin's written authorization is stored outside the repository; until then, invented data.
 - **IL scanning depends on Mono.Cecil resolving Npgsql and EF Core assemblies** from the test output folder; if resolution fails, the test fails (never skips).
+- **Minor debt:** the `<summary>` of `ReglasDeConsultas.Analizar` still lists only `call`, `callvirt`, `newobj` and `ldftn`.
