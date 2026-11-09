@@ -34,13 +34,19 @@ public class PipelineArquitecturaTests
 
     // ---- T-25: contratos de eventos (R-39, R-02) ----
 
-    [Fact] // La corrida de producción es vacía hasta H12 (Spec 004 C-07); solo vale junto a los canarios.
+    [Fact] // Spec 006 T-18 (R-25): desde H12 la regla evalúa exactamente {PartidoGuardado}; vale junto a los canarios.
     public void T25_los_eventos_de_produccion_cumplen_el_contrato()
     {
-        var resultado = ReglasDeArquitectura.ContratosDeEventos(
-            Produccion.SelectMany(a => a.GetTypes()), TablaDeModulos.RaicesDeCapa);
+        var tipos = Produccion.SelectMany(a => a.GetTypes()).ToList();
+
+        var resultado = ReglasDeArquitectura.ContratosDeEventos(tipos, TablaDeModulos.RaicesDeCapa);
 
         Assert.True(resultado.Cumple, resultado.ToString());
+        // Anti-vacío: el conjunto evaluado es exactamente este, ni más ni menos.
+        var evaluados = tipos
+            .Where(t => !t.IsInterface && !t.IsAbstract && typeof(GoalFlow.Application.Mensajeria.IEventoDeIntegracion).IsAssignableFrom(t))
+            .Select(t => t.Name).Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(["PartidoGuardado"], evaluados);
     }
 
     [Fact] // Control positivo: la regla acepta un evento correcto en .Contracts.

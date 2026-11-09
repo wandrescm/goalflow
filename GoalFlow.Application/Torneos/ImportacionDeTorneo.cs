@@ -145,6 +145,9 @@ public class ImportacionDeTorneo(
                 conflictos.Add(new ConflictoDeImportacion("partido", $"{clave.Orden}/{clave.Item2}/{clave.Item3}"));
         }
 
+        // Spec 006 R-27 a R-29: lo que ya tiene resultado no se cancela, no se retira ni se reprograma fuera de lo permitido.
+        DetectarConflictosConResultados(fixture, guardado, equiposPorId, participacionesPorId, conflictos);
+
         // R-22: un jugador no cambia de equipo dentro del torneo.
         var equipoPorJugadorGuardado = guardado.Inscripciones.ToDictionary(
             i => jugadoresPorId[i.JugadorId].Codigo,
@@ -156,6 +159,65 @@ public class ImportacionDeTorneo(
                 conflictos.Add(new ConflictoDeImportacion("jugador_en_otro_equipo", jugador.Codigo));
 
         return conflictos;
+    }
+
+    private static bool TieneResultado(EstadoDePartido estado) =>
+        estado is EstadoDePartido.Jugado or EstadoDePartido.Suspendido or EstadoDePartido.Adjudicado;
+
+    /// <summary>
+    /// R-27: cancelar un partido con resultado. R-28: cambiar la jornada de uno que no sea <c>Programado</c> ni
+    /// <c>Cancelado</c>, o la hora de uno <c>Jugado</c> o <c>Adjudicado</c> (la de uno <c>Suspendido</c> sí puede cambiar, C-09).
+    /// R-29: retirar un equipo que tiene un partido con resultado. Solo claves naturales de la liga del llamante (R-24).
+    /// </summary>
+    private static void DetectarConflictosConResultados(
+        FixtureDescripcion fixture,
+        EstadoGuardado guardado,
+        Dictionary<Guid, Equipo> equiposPorId,
+        Dictionary<Guid, EquipoTorneo> participacionesPorId,
+        List<ConflictoDeImportacion> conflictos)
+    {
+        var codigoDe = (Guid participacionId) => equiposPorId[participacionesPorId[participacionId].EquipoId].Codigo;
+        var retiradosEnElFixture = fixture.Equipos.Where(e => e.Retirado).Select(e => e.Codigo).ToHashSet(StringComparer.Ordinal);
+        var fasesPorOrden = guardado.Fases.ToDictionary(f => f.Orden);
+        var participacionPorCodigo = guardado.Participaciones.ToDictionary(p => equiposPorId[p.EquipoId].Codigo, StringComparer.Ordinal);
+        var partidosGuardados = guardado.Partidos.ToDictionary(p => (p.FaseId, p.LocalId, p.VisitanteId));
+        var agregados = new HashSet<(string, string)>();
+
+        void Agregar(string tipo, string clave)
+        {
+            if (agregados.Add((tipo, clave))) conflictos.Add(new ConflictoDeImportacion(tipo, clave));
+        }
+
+        // R-29, en el orden de los equipos del fixture.
+        foreach (var equipo in fixture.Equipos.Where(e => e.Retirado))
+        {
+            if (!participacionPorCodigo.TryGetValue(equipo.Codigo, out var participacion)) continue;
+            if (guardado.Partidos.Any(p => TieneResultado(p.Estado) && (p.LocalId == participacion.Id || p.VisitanteId == participacion.Id)))
+                Agregar("retiro_con_resultados", equipo.Codigo);
+        }
+
+        // R-27 y R-28, en el orden de los partidos del fixture.
+        foreach (var descripcion in fixture.Partidos)
+        {
+            if (!fasesPorOrden.TryGetValue(descripcion.Fase, out var fase)) continue;
+            if (!participacionPorCodigo.TryGetValue(descripcion.Local, out var local)) continue;
+            if (!participacionPorCodigo.TryGetValue(descripcion.Visitante, out var visitante)) continue;
+            if (!partidosGuardados.TryGetValue((fase.Id, local.Id, visitante.Id), out var partido)) continue;
+
+            var clave = $"{descripcion.Fase}/{descripcion.Local}/{descripcion.Visitante}";
+            DateTimeOffset? hora = null;
+            if (descripcion.ProgramadoEn is { } texto && HoraProgramada.Interpretar(texto, out var interpretada) is null)
+                hora = interpretada;
+
+            // Si el partido es de un equipo que se retira, ya lo explica el conflicto de R-29: no se repite como R-27.
+            var loExplicaElRetiro = retiradosEnElFixture.Contains(descripcion.Local) || retiradosEnElFixture.Contains(descripcion.Visitante);
+            if (descripcion.Cancelado && TieneResultado(partido.Estado) && !loExplicaElRetiro) Agregar("partido_con_resultado", clave);
+
+            var abierto = partido.Estado is EstadoDePartido.Programado or EstadoDePartido.Cancelado;
+            if (descripcion.Jornada != partido.Jornada && !abierto) Agregar("partido_con_resultado", clave);
+            if (hora != partido.ProgramadoEn && partido.Estado is EstadoDePartido.Jugado or EstadoDePartido.Adjudicado)
+                Agregar("partido_con_resultado", clave);
+        }
     }
 
     private ResultadoDeImportacion Aplicar(
@@ -272,6 +334,8 @@ public class ImportacionDeTorneo(
             if (partidosGuardados.TryGetValue((fase.Id, local.Id, visitante.Id), out var partido))
             {
                 var cambioHora = partido.Reprogramar(descripcion.Jornada, hora);
+
+                // R-26: "no cancelado" coincide con cualquier estado guardado salvo Cancelado; solo un Cancelado vuelve a Programado.
                 var cambioEstado = descripcion.Cancelado ? partido.Cancelar() : partido.Reactivar();
                 partidosConteo.Resultado(cambioHora | cambioEstado);
             }

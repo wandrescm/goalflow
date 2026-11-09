@@ -1,8 +1,8 @@
 # ADR-06: Tournament domain model (structure as data, identity per league)
 
-- **Status:** Accepted (2026-11-06, after two owner reviews)
+- **Status:** Accepted (2026-11-06, after two owner reviews). Amendment §2.7 accepted on 2026-11-08 with Spec 006 v3, after three owner reviews
 - **Date:** 2026-11-06 (S3D1)
-- **Related:** ADR-03 (modular monolith), ADR-14 (multi-tenancy; amended with this ADR, §2.11), ADR-02 (post-save pipeline), Spec 005
+- **Related:** ADR-03 (modular monolith), ADR-14 (multi-tenancy; amended with this ADR, §2.11), ADR-02 (post-save pipeline), Spec 005, Spec 006
 
 ## 1. Context
 
@@ -51,7 +51,17 @@ Relationships inside a tournament are enforced by composite foreign keys that ca
 
 ### 2.6 Loading in this milestone
 
-The Admin loads a whole tournament with one idempotent import (Spec 005): the payload is the **complete** desired state of that tournament. The import adds and updates; it never deletes. **Omitting is not deleting:** a stored item that is missing from the payload is a conflict, because it may be an accident. A team that leaves the tournament is marked as withdrawn (`Retirado`) and its scheduled matches as cancelled (`Cancelado`); rows and history are kept, and both marks can be reverted while no result exists. A cancelled match keeps its identity (its pair cannot be scheduled again in the same phase) but frees its teams' slot in that matchday, and it never produces goals, points or statistics. Withdrawal after results is decided with the score sheet (Spec 006).
+The Admin loads a whole tournament with one idempotent import (Spec 005): the payload is the **complete** desired state of that tournament. The import adds and updates; it never deletes. **Omitting is not deleting:** a stored item that is missing from the payload is a conflict, because it may be an accident. A team that leaves the tournament is marked as withdrawn (`Retirado`) and its scheduled matches as cancelled (`Cancelado`); rows and history are kept, and both marks can be reverted while no result exists. A cancelled match keeps its identity (its pair cannot be scheduled again in the same phase) but frees its teams' slot in that matchday, and it never produces goals, points or statistics. Once a team has a match with a result, the import cannot withdraw it or cancel that match (§2.7); withdrawal after results waits for a regulation decision.
+
+### 2.7 Score sheet and match versions (amendment, 2026-11-08, Spec 006 v3)
+
+- **States.** A match is `Programado`, `Jugado`, `Suspendido`, `Adjudicado` or `Cancelado`. The import moves a match only between `Programado` and `Cancelado` and reschedules it within the limits below; the score sheet sets the other four. Each state has a content rule: `Jugado` has a sporting score; `Suspendido` has a partial sporting score and a sporting reason; `Adjudicado` has an official score and a sporting reason; `Programado` (sheet withdrawn) has nothing.
+- **Ordinary and exceptional changes.** Recording a first result, completing or resolving a suspension, and correcting a sheet within the same state are ordinary. Any other change between result states, and withdrawing a sheet, is a rectification and carries a coded rectification reason, separate from the sporting reason and stored in the new version; it belongs to that version and is never carried over to later ones. Who and when are recorded on every version. There is no approval workflow in this milestone.
+- **Sporting and official results are separate.** Sporting goals (by a player, own goals, unattributed) add up to the sporting score. The official score is the sporting one for `Jugado` and the adjudicated one for `Adjudicado`; a suspended match has none until it is resolved. Administrative goals are never goal rows, so they never reach a player.
+- **Goals point to registrations** (§2.1). An own goal references the scorer's registration and is credited to the opponent; it never counts for the scorer. The credited team is derived from the scorer's team. Unattributed goals are stored per sheet and credited team, with no registration. Goals and cards are aggregated per (type, credited team, player) with a quantity: for sheets without minutes or individual events, this simplifies the contract, gives each row a natural identity and makes equality a set comparison. Cards record whether disciplinary information was reported, so "zero cards" and "not reported" stay distinct.
+- **Immutable versions.** Each effective save appends a complete sheet version (header, goals, cards); nothing is updated or deleted, and the database role has no `UPDATE` or `DELETE` on those tables. `Partido` carries the current version; version 0 means no sheet. An identical save writes nothing. A save must name the version it edited. Besides that business version, the match row carries a row-version token (PostgreSQL `xmin`) checked by **every** update of the match, by the sheet or by the import, so a stale or concurrent change from either side is rejected instead of lost (as `409`, whichever guard detects it, with nothing of the loser persisted); the business version alone would not see an import that cancels a match without moving it.
+- **One event per version.** Each new version publishes `PartidoGuardado` (tenant, match, version) in the same transaction (ADR-02). There is no separate "corrected" event: consumers re-read the current state.
+- **Results are protected from the fixture.** The import cannot change the result, the sheet versions or the protected attributes of a match with a result (its state, its matchday, its team's withdrawal); the only change it may make to such a match is the scheduled time of a suspended one.
 
 ## 3. Rejected alternatives
 
@@ -60,6 +70,12 @@ The Admin loads a whole tournament with one idempotent import (Spec 005): the pa
 - **Group, knockout and qualification now:** the pilot formats are not confirmed; modelling them now would be speculative and would not be exercised by any test with real data.
 - **A league-assigned code for each match:** the ordered pair inside a phase is already a stable natural key, and postponements do not change it.
 - **Matching rows by name on re-import:** names repeat and are corrected; a typo fix would create a new identity.
+- **Score sheet with `DELETE` on goals** (amendment): a correction would erase the evidence of what was published before.
+- **Score sheet as `jsonb` in the match** (amendment): no composite foreign keys to registrations, and scorers would be computed from documents.
+- **One row per goal** (amendment): comparable as a multiset, but with no natural identity per row and a larger contract, for sheets that have no minutes or individual events.
+- **Separate `PartidoCorregido` event** (amendment): the version number does not tell a first result from a correction, and consumers re-read anyway.
+- **Business version as the only concurrency token** (amendment): an import that cancels or reschedules a match does not move it, so a sheet saved concurrently would overwrite the import (owner's review, Critical).
+- **Every transition treated as ordinary** (amendment, v1 of Spec 006): it would not record why a result changed its nature.
 
 ## 4. Consequences
 
@@ -68,6 +84,9 @@ The Admin loads a whole tournament with one idempotent import (Spec 005): the pa
 - **(−)** More tables and composite keys than a flat model; every relationship inside a tournament needs the extra `torneo_id` column.
 - **(−)** Mid-tournament transfers are not supported.
 - **(−)** If a league officially replays an annulled match and must keep both records, the match key needs a new decision.
+- **(+)** (amendment) Every published result can be traced to an immutable sheet version, and corrections never double-count.
+- **(−)** (amendment) Every reader of sheets must select the current version; a query that forgets it sums history. The statistics Spec must test it.
+- **(−)** (amendment) Sheet tables grow with every correction (small at league scale).
 
 ## 5. Clarifications
 
@@ -76,3 +95,8 @@ The Admin loads a whole tournament with one idempotent import (Spec 005): the pa
 - **C-03** *How are rows recognised on re-import?* League-assigned codes for tournament, team and player; the ordered pair per phase for matches. Decided by the owner on 2026-11-06.
 - **C-04** *Transfers within a tournament?* Not supported; one registration per player per tournament, enforced by a unique constraint. Decided by the owner on 2026-11-06.
 - **C-05** *How is a two-legged knockout tie decided?* By default, aggregate score, then a penalty shoot-out if level. The rules are configurable per tournament or phase and kept as historical configuration. Implementation is out of scope for H09–H10. Open for the knockout decision: whether the shoot-out result belongs to the second-leg match or to a tie entity that groups both legs. Decided by the owner on 2026-11-06.
+- **C-06** *Must player goals add up to the score?* To the sporting score, not to the official one (§2.7). Decided by the owner on 2026-11-08 (P-02).
+- **C-07** *How is a sheet corrected without `DELETE`?* Immutable versions; the current one is the match's version. Decided by the owner on 2026-11-08.
+- **C-08** *Withdrawal of a team after results?* Blocked until a regulation decision; the import never rewrites a match with a result. Decided by the owner on 2026-11-08.
+- **C-09** *How are rectifications audited?* Ordinary and exceptional changes are distinguished; exceptional ones and withdrawals carry a coded rectification reason (§2.7). Decided by the owner on 2026-11-08 (review of Spec 006).
+- **C-10** *Can an import and a sheet save overwrite each other?* No: every update of a match checks a row-version token (§2.7). Raised by the owner on 2026-11-08 (review of Spec 006, Critical).

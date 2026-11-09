@@ -12,8 +12,12 @@ public enum EstadoDeParticipacion
     Retirado,
 }
 
+/// <summary>Los cinco estados de un partido (Spec 006 R-01).</summary>
 public enum EstadoDePartido
 {
     Programado,
     Cancelado,
+    Jugado,
+    Suspendido,
+    Adjudicado,
 }
