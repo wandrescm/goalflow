@@ -1,6 +1,8 @@
 using GoalFlow.Api.Hosting;
+using GoalFlow.Application.Torneos;
 using GoalFlow.Infrastructure.Mensajeria;
 using GoalFlow.Infrastructure.Persistencia;
+using GoalFlow.Infrastructure.Torneos;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +25,11 @@ builder.Services.AddGoalFlowCors();
 builder.Services.AddGoalFlowPersistencia();
 builder.Services.AddGoalFlowMensajeria();
 builder.Services.AddGoalFlowAutenticacion();
+
+// Planilla post-partido (Spec 006): el puerto con su adaptador y los dos casos de uso.
+builder.Services.AddScoped<IAlmacenDePlanilla, AlmacenDePlanilla>();
+builder.Services.AddScoped<GuardarPlanilla>();
+builder.Services.AddScoped<ConsultaDePlanilla>();
 
 var app = builder.Build();
 

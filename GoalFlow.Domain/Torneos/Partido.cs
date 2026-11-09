@@ -31,6 +31,18 @@ public class Partido(
         return true;
     }
 
+    /// <summary>
+    /// Fija la planilla vigente: su número y su estado, siempre juntos (Spec 006 R-07). Solo la planilla lo llama; la
+    /// importación nunca cambia la versión (R-30).
+    /// </summary>
+    public void AplicarVersion(int version, EstadoDePartido estado)
+    {
+        if (version < 1) throw new ArgumentOutOfRangeException(nameof(version));
+        if (estado == EstadoDePartido.Cancelado) throw new ArgumentException("Una planilla no deja el partido cancelado.", nameof(estado));
+        Version = version;
+        Estado = estado;
+    }
+
     /// <returns><c>true</c> si el estado cambió.</returns>
     public bool Cancelar() => Cambiar(EstadoDePartido.Cancelado);
 
