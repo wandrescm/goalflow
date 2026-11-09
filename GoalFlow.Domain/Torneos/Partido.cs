@@ -17,6 +17,9 @@ public class Partido(
     public DateTimeOffset? ProgramadoEn { get; private set; } = Reglas.HoraEnUtc(programadoEn);
     public EstadoDePartido Estado { get; private set; } = EstadoDePartido.Programado;
 
+    /// <summary>Número de la planilla vigente; 0 si nunca se guardó una (Spec 006 R-01).</summary>
+    public int Version { get; private set; }
+
     /// <returns><c>true</c> si la jornada o la hora cambiaron.</returns>
     public bool Reprogramar(int jornada, DateTimeOffset? programadoEn)
     {

@@ -26,6 +26,9 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
     public DbSet<EquipoTorneo> EquiposTorneo => Set<EquipoTorneo>();
     public DbSet<InscripcionJugador> InscripcionesJugador => Set<InscripcionJugador>();
     public DbSet<Partido> Partidos => Set<Partido>();
+    public DbSet<Planilla> Planillas => Set<Planilla>();
+    public DbSet<Gol> Goles => Set<Gol>();
+    public DbSet<Tarjeta> Tarjetas => Set<Tarjeta>();
 
     // El filtro referencia este miembro para evaluarse por consulta; EF Core cachea el modelo (ADR-14 §2.2).
     private TenantId TenantActual => tenantContext.Current;
@@ -107,6 +110,23 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
         {
             ConfiguracionDeTorneos.Partido(partido);
             partido.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+
+        // Planilla post-partido (Spec 006 R-06): mismo filtro Tenant, y RLS en la misma migración.
+        modelBuilder.Entity<Planilla>(planilla =>
+        {
+            ConfiguracionDeTorneos.Planilla(planilla);
+            planilla.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<Gol>(gol =>
+        {
+            ConfiguracionDeTorneos.Gol(gol);
+            gol.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<Tarjeta>(tarjeta =>
+        {
+            ConfiguracionDeTorneos.Tarjeta(tarjeta);
+            tarjeta.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
         });
     }
 
