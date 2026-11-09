@@ -1,4 +1,7 @@
+using GoalFlow.Application.Mensajeria;
 using GoalFlow.Application.Torneos;
+using GoalFlow.Application.Torneos.Contracts;
+using GoalFlow.Domain.Tenancy;
 using GoalFlow.Domain.Torneos;
 using GoalFlow.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
@@ -52,8 +55,21 @@ public class AlmacenDePlanilla(GoalFlowDbContext contexto) : IAlmacenDePlanilla
                 i.Codigo, i.Id, i.EquipoTorneoId == localId ? LadoDelPartido.Local : LadoDelPartido.Visitante))]);
     }
 
+    /// <summary>
+    /// R-20, C-30: solo el duplicado de entrega de este mismo guardado es un conflicto de versión: todas las filas pendientes
+    /// son de <c>torneos.partido-guardado</c>, de este tenant, de este partido y de la versión que se intentaba escribir.
+    /// Cualquier otro duplicado conserva su comportamiento (ADR-02).
+    /// </summary>
+    public static bool EsConflictoDeVersion(EntregaDuplicadaException duplicada, TenantId tenant, Guid partidoId, int version) =>
+        duplicada.Claves.Count > 0
+        && duplicada.Claves.All(c =>
+            c.TenantId == tenant && c.TipoDeEvento == PartidoGuardado.NombreDelEvento && c.AgregadoId == partidoId && c.Version == version);
+
+    private (TenantId Tenant, Guid Partido, int Version)? _intento;
+
     public void AgregarVersion(Planilla planilla, IReadOnlyList<Gol> goles, IReadOnlyList<Tarjeta> tarjetas)
     {
+        _intento = (planilla.TenantId, planilla.PartidoId, planilla.Version);
         contexto.Add(planilla);
         contexto.AddRange(goles);
         contexto.AddRange(tarjetas);
@@ -68,6 +84,13 @@ public class AlmacenDePlanilla(GoalFlowDbContext contexto) : IAlmacenDePlanilla
         catch (DbUpdateConcurrencyException)
         {
             // El token de fila de partidos cambió después de la lectura: otra planilla o una importación (R-20).
+            throw new ConflictoDeVersionException(null);
+        }
+        catch (EntregaDuplicadaException duplicada) when (
+            _intento is { } intento && EsConflictoDeVersion(duplicada, intento.Tenant, intento.Partido, intento.Version))
+        {
+            // Dos guardados que leyeron la misma versión publican la misma (agregado, versión): el perdedor puede fallar
+            // primero en la clave lógica de la entrega (C-28). Cualquier otro duplicado conserva su comportamiento.
             throw new ConflictoDeVersionException(null);
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException

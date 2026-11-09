@@ -140,7 +140,7 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
         }
         catch (DbUpdateException ex) when (EsClaveLogicaDuplicada(ex))
         {
-            throw new EntregaDuplicadaException(ex);
+            throw new EntregaDuplicadaException(ex, ClavesDeEntregaPendientes());
         }
     }
 
@@ -152,9 +152,17 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
         }
         catch (DbUpdateException ex) when (EsClaveLogicaDuplicada(ex))
         {
-            throw new EntregaDuplicadaException(ex);
+            throw new EntregaDuplicadaException(ex, ClavesDeEntregaPendientes());
         }
     }
+
+    // Las filas de entrega que el guardado fallido intentaba insertar siguen Added en el rastreador (ADR-02 hecho 10): sus
+    // claves lógicas permiten al productor reconocer su propio duplicado (Spec 006 R-20, C-30).
+    private List<ClaveLogicaDeEntrega> ClavesDeEntregaPendientes() =>
+        [.. ChangeTracker.Entries<EntregaEvento>()
+            .Where(e => e.State == EntityState.Added)
+            .Select(e => new ClaveLogicaDeEntrega(
+                e.Entity.TenantId, e.Entity.TipoDeEvento, e.Entity.AgregadoId, e.Entity.VersionDelAgregado, e.Entity.Consumidor))];
 
     private static bool EsClaveLogicaDuplicada(DbUpdateException ex) =>
         ex.InnerException is PostgresException

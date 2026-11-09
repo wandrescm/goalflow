@@ -1,5 +1,7 @@
+using GoalFlow.Application.Mensajeria;
 using GoalFlow.Application.Persistencia;
 using GoalFlow.Application.Tenancy;
+using GoalFlow.Application.Torneos.Contracts;
 using GoalFlow.Domain.Torneos;
 using Microsoft.Extensions.Logging;
 
@@ -129,6 +131,7 @@ public class ConsultaDePlanilla(IUnidadDeTrabajo unidadDeTrabajo, IAlmacenDePlan
 public class GuardarPlanilla(
     IUnidadDeTrabajo unidadDeTrabajo,
     IAlmacenDePlanilla almacen,
+    IPublicadorDeEventos publicador,
     ITenantContext tenantContext,
     ILogger<GuardarPlanilla> logger)
 {
@@ -190,6 +193,9 @@ public class GuardarPlanilla(
 
         partido.AplicarVersion(version, resuelta.Estado);
         almacen.AgregarVersion(planilla, goles, tarjetas);
+
+        // R-24: una vez por versión nueva, dentro de la transacción; sin consumidores registrados no escribe ninguna fila.
+        publicador.Publicar(new PartidoGuardado(partido.TenantId, partido.Id, version));
         await almacen.GuardarAsync(cancellationToken);
         await transaccion.ConfirmarAsync(cancellationToken);
 
