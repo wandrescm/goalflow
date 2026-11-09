@@ -43,11 +43,19 @@ public class Partido(
         Estado = estado;
     }
 
+    /// <summary>Un partido con resultado (<c>Jugado</c>, <c>Suspendido</c> o <c>Adjudicado</c>) no se cancela (Spec 006 R-27).</summary>
     /// <returns><c>true</c> si el estado cambió.</returns>
-    public bool Cancelar() => Cambiar(EstadoDePartido.Cancelado);
+    public bool Cancelar() =>
+        Estado is EstadoDePartido.Jugado or EstadoDePartido.Suspendido or EstadoDePartido.Adjudicado
+            ? throw new ReglaDeDominioException(RazonesDeDominio.PartidoConResultado)
+            : Cambiar(EstadoDePartido.Cancelado);
 
+    /// <summary>
+    /// Solo un partido <c>Cancelado</c> vuelve a <c>Programado</c> (Spec 006 R-26): cualquier otro estado, incluido un
+    /// resultado, queda como está.
+    /// </summary>
     /// <returns><c>true</c> si el estado cambió.</returns>
-    public bool Reactivar() => Cambiar(EstadoDePartido.Programado);
+    public bool Reactivar() => Estado == EstadoDePartido.Cancelado && Cambiar(EstadoDePartido.Programado);
 
     private bool Cambiar(EstadoDePartido estado)
     {

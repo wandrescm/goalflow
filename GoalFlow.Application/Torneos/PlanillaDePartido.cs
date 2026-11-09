@@ -118,7 +118,13 @@ public class ConsultaDePlanilla(IUnidadDeTrabajo unidadDeTrabajo, IAlmacenDePlan
         var cargado = await almacen.CargarAsync(clave, cancellationToken) ?? throw new PartidoInexistenteException();
 
         var vigente = ConversorDePlanilla.Vigente(cargado) ?? ConversorDePlanilla.Vacia(cargado.Partido.Estado);
-        var vista = new VistaDePlanilla(cargado.Partido.Version, ConversorDePlanilla.Describir(vigente));
+        var descripcion = ConversorDePlanilla.Describir(vigente);
+
+        // R-15: de un partido cancelado el GET informa ese estado, también si lo canceló la importación sobre un retiro (C-12).
+        if (cargado.Partido.Estado == EstadoDePartido.Cancelado)
+            descripcion = descripcion with { Estado = nameof(EstadoDePartido.Cancelado) };
+
+        var vista = new VistaDePlanilla(cargado.Partido.Version, descripcion);
         await transaccion.ConfirmarAsync(cancellationToken);
         return vista;
     }

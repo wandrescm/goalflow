@@ -378,6 +378,12 @@ public partial class PlanillaTests(BaseDeAislamiento db)
         var cancelado = Torneo(p) with { Partidos = [.. Torneo(p).Partidos.Select((m, i) => i == 0 ? m with { Cancelado = true } : m)] };
         Assert.Equal(HttpStatusCode.OK, (await e.Importar(p, cancelado)).StatusCode);
         Assert.Equal("Cancelado", await e.EstadoDelPartido(p));
+
+        // R-15: el GET informa Cancelado aunque la planilla vigente sea el retiro, y el PUT recibe 409.
+        using var get = await Cuerpo(await e.Leer(ruta));
+        Assert.Equal("Cancelado", get.RootElement.GetProperty("estado").GetString());
+        Assert.Equal(2, get.RootElement.GetProperty("version").GetInt32());
+        Assert.Equal(HttpStatusCode.Conflict, (await e.Guardar(ruta, Jugado3a1(p, 2))).StatusCode);
     }
 
     // ---- T-20 ----

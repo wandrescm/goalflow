@@ -52,6 +52,12 @@ public class AlmacenDeImportacion(GoalFlowDbContext contexto) : IAlmacenDeImport
         {
             await contexto.SaveChangesAsync(cancellationToken);
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Otra transacción cambió un partido después de leerlo, por ejemplo una planilla (Spec 006 R-20, R-30). Es el
+            // mismo 409 de la importación concurrente, sin nombres de restricción.
+            throw new ConflictoConcurrenteException();
+        }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
             // Sin el nombre de la restricción ni el mensaje de la base (R-23, R-24).

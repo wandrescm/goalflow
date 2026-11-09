@@ -140,10 +140,37 @@ public sealed class EntornoDePlanilla : IAsyncDisposable
         return peticion;
     }
 
-    public Task<HttpResponseMessage> Importar(string codigo, TorneoJ fixture, string liga = "liga-a") =>
-        Cliente.SendAsync(Peticion(
+    public async Task<HttpResponseMessage> Importar(string codigo, TorneoJ fixture, string liga = "liga-a")
+    {
+        var respuesta = await Cliente.SendAsync(Peticion(
             HttpMethod.Put, $"/{liga}/admin/torneos/{codigo}", JsonSerializer.Serialize(fixture, Json),
             liga == "liga-b" ? UsuarioU2 : UsuarioU1));
+        await ExigirEstadoConsistente(codigo);
+        return respuesta;
+    }
+
+    /// <summary>
+    /// Spec 006 T-21 (R-07): en todo partido de la base, <c>partidos.estado</c> es el estado de la planilla vigente, o
+    /// <c>Programado</c>/<c>Cancelado</c> con versión 0. Se comprueba tras cada guardado y cada importación de las pruebas.
+    /// Una excepción, por C-12 y T-13: la importación puede cancelar un partido cuya planilla vigente es un retiro
+    /// (<c>Programado</c>); entonces el partido queda <c>Cancelado</c> sobre esa planilla. Ninguna otra combinación es válida
+    /// (R-27 impide cancelar un partido con resultado).
+    /// </summary>
+    public static string PartidosDivergentes(string torneo) => $"""
+        select count(*) from goalflow.partidos pa
+        join goalflow.torneos t on t.id = pa.torneo_id
+        left join goalflow.planillas pl on pl.partido_id = pa.id and pl.version = pa.version
+        where t.codigo = '{torneo}'
+          and ((pa.version = 0 and pa.estado not in ('Programado', 'Cancelado'))
+            or (pa.version > 0 and (pl.id is null
+                or (pl.estado <> pa.estado and not (pa.estado = 'Cancelado' and pl.estado = 'Programado')))))
+        """;
+
+    /// <summary>Acotada al torneo de la prueba: una divergencia de una prueba no debe contagiar a las demás.</summary>
+    public async Task ExigirEstadoConsistente(string torneo) =>
+        Assert.Equal(0, await Contar(PartidosDivergentes(torneo)));
+
+    private static readonly System.Text.RegularExpressions.Regex TorneoDeLaRuta = new(@"/torneos/([^/]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>Importa el torneo y exige 200: la preparación de cada prueba.</summary>
     public async Task<string> Preparar(TorneoJ? fixture = null)
@@ -157,8 +184,12 @@ public sealed class EntornoDePlanilla : IAsyncDisposable
     public Task<HttpResponseMessage> Guardar(string ruta, PlanillaJ planilla, Guid? usuario = null) =>
         GuardarTexto(ruta, JsonSerializer.Serialize(planilla, Json), usuario);
 
-    public Task<HttpResponseMessage> GuardarTexto(string ruta, string cuerpo, Guid? usuario = null) =>
-        Cliente.SendAsync(Peticion(HttpMethod.Put, ruta, cuerpo, usuario ?? UsuarioU1));
+    public async Task<HttpResponseMessage> GuardarTexto(string ruta, string cuerpo, Guid? usuario = null)
+    {
+        var respuesta = await Cliente.SendAsync(Peticion(HttpMethod.Put, ruta, cuerpo, usuario ?? UsuarioU1));
+        if (TorneoDeLaRuta.Match(ruta) is { Success: true } torneo) await ExigirEstadoConsistente(torneo.Groups[1].Value);
+        return respuesta;
+    }
 
     public Task<HttpResponseMessage> Leer(string ruta, Guid? usuario = null) =>
         Cliente.SendAsync(Peticion(HttpMethod.Get, ruta, null, usuario ?? UsuarioU1));

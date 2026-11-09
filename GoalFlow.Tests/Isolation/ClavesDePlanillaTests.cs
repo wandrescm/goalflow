@@ -225,6 +225,60 @@ public class ClavesDePlanillaTests(BaseDeAislamiento db)
     }
 
     [Fact]
+    public async Task T14_una_segunda_tarjeta_del_mismo_color_para_la_misma_inscripcion_y_planilla_es_rechazada_con_23505()
+    {
+        var g = await GrafoDePlanillas.ObtenerAsync(db);
+        var (conexion, transaccion) = await TransaccionDeLaLigaA();
+        await using var _ = conexion;
+        await using var __ = transaccion;
+
+        await Ejecutar(conexion, transaccion, Tarjeta(LigaA.Value, g.TorneoA, g.PlanillaA, g.InscripcionA1, "Roja"));
+        var error = await Assert.ThrowsAsync<PostgresException>(() =>
+            Ejecutar(conexion, transaccion, Tarjeta(LigaA.Value, g.TorneoA, g.PlanillaA, g.InscripcionA1, "Roja", 2)));
+
+        Assert.Equal(ViolaUnicidad, error.SqlState);
+        Assert.Equal("ux_tarjetas_tenant_planilla_inscripcion_color", error.ConstraintName);
+    }
+
+    // ---- R-06: RLS con la política del tenant en las tres tablas ----
+
+    [Theory]
+    [InlineData("planillas")]
+    [InlineData("goles")]
+    [InlineData("tarjetas")]
+    public async Task R06_cada_tabla_de_la_planilla_solo_muestra_las_filas_del_tenant_de_la_transaccion(string tabla)
+    {
+        await GrafoDePlanillas.ObtenerAsync(db); // asegura que A y B tienen planillas
+        await using var conexion = new NpgsqlConnection(db.CadenaApp);
+        await conexion.OpenAsync();
+
+        async Task<(long Propias, long Ajenas)> Contar(string? tenant)
+        {
+            await using var transaccion = await conexion.BeginTransactionAsync();
+            if (tenant is not null) await Ejecutar(conexion, transaccion, $"select set_config('app.tenant_id', '{tenant}', true)");
+            await using var comando = new NpgsqlCommand($"""
+                select count(*) filter (where tenant_id = '{tenant ?? Guid.Empty.ToString()}'), count(*) filter (where tenant_id <> '{tenant ?? Guid.Empty.ToString()}')
+                from goalflow.{tabla}
+                """, conexion, transaccion);
+            await using var lector = await comando.ExecuteReaderAsync();
+            await lector.ReadAsync();
+            var resultado = (lector.GetInt64(0), lector.GetInt64(1));
+            await lector.CloseAsync();
+            await transaccion.RollbackAsync();
+            return resultado;
+        }
+
+        var (propiasA, ajenasA) = await Contar(LigaA.Value.ToString());
+        var (propiasB, ajenasB) = await Contar(LigaB.Value.ToString());
+        var (sinTenantPropias, sinTenantAjenas) = await Contar(null);
+
+        Assert.Equal(0, ajenasA);
+        Assert.Equal(0, ajenasB);
+        Assert.Equal((0, 0), (sinTenantPropias, sinTenantAjenas)); // sin tenant, cero filas
+        if (tabla == "planillas") Assert.True(propiasA >= 1 && propiasB >= 1, "Las dos ligas tienen planillas sembradas");
+    }
+
+    [Fact]
     public async Task T14_un_gol_SinAutor_con_inscripcion_es_rechazado_con_23514()
     {
         var g = await GrafoDePlanillas.ObtenerAsync(db);
