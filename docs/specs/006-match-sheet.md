@@ -1,6 +1,6 @@
 # Spec 006: Post-match score sheet, match versions and `PartidoGuardado`
 
-- **Status:** **Approved v3** (2026-11-08, S3D5, H11; approved by the owner the same day after the four precisions of C-29 to C-31 and T-05, T-26). History: v1 built from the owner's decisions of 2026-11-08 (P-02, five design challenges, scope answers); v2 after the owner's review the same day (one Critical and six Major findings: R-02, R-09, R-11, R-13 to R-16, R-19, R-20, R-30; T-08, T-09, T-22 to T-25; C-05, C-07, C-09, C-11, C-12, C-14, C-15 decided; C-20 to C-25 added; §8.1). v3 after the owner's second review the same day (two precisions: conflict mapping and rectification reasons across versions; R-14, R-16, R-20, R-30; T-08, T-23, T-24; C-26 to C-28; ADR-02 amended). Implementation authorized under the handoff of H12.
+- **Status:** **Implemented** (2026-11-08): PR #15, merge `bc7e10d`, Render *Live* and production verified the same day (§9). Approved v3 (2026-11-08, S3D5, H11; approved by the owner the same day after the four precisions of C-29 to C-31 and T-05, T-26). History: v1 built from the owner's decisions of 2026-11-08 (P-02, five design challenges, scope answers); v2 after the owner's review the same day (one Critical and six Major findings: R-02, R-09, R-11, R-13 to R-16, R-19, R-20, R-30; T-08, T-09, T-22 to T-25; C-05, C-07, C-09, C-11, C-12, C-14, C-15 decided; C-20 to C-25 added; §8.1). v3 after the owner's second review the same day (two precisions: conflict mapping and rectification reasons across versions; R-14, R-16, R-20, R-30; T-08, T-23, T-24; C-26 to C-28; ADR-02 amended). Implementation authorized under the handoff of H12.
 - **Date:** 2026-11-08
 - **Related:** ADR-06 (amended §2.7 with this Spec), ADR-02 (post-save pipeline; amended §2.3 with this Spec, C-28), ADR-14 (§2.11 keys), ADR-01 (Admin routes), Spec 004 (additive: the duplicate-delivery exception exposes its pending keys), Spec 005 (amended: R-18, R-23, R-38 to R-40)
 - **Effort:** Medium (Sonnet); the sheet validation, the transition rule and the save use case may use `opusplan`
@@ -185,12 +185,12 @@ Spec 005 tests keep passing unchanged, except setup adaptations allowed by Spec 
 
 ## 8. Definition of done
 
-- [ ] All tests above pass and none was modified to make it pass (Spec 005 setup exceptions: C-09, C-21).
-- [ ] Every requirement maps to at least one test (see §9).
-- [ ] No new warnings; no secrets in the diff; no raw SQL outside the migration; the generated migration script adds no `xmin` column (R-20).
-- [ ] ADR-06 amended (§2.7); Spec 005 §10 obligation closed by reference.
-- [ ] Migration script applied by the owner as `postgres` before the merge.
-- [ ] PR description contains the validation table, the evidence of §8.1 and the mutation audit.
+- [x] All tests above pass and none was modified to make it pass (Spec 005 setup exceptions: C-09, C-21). Final suite 457 / 457 (baseline 325).
+- [x] Every requirement maps to at least one test (see §9).
+- [x] No new warnings; no secrets in the diff; no raw SQL outside the migration; the generated migration script adds no `xmin` column (0 matches in the script; 0 user columns named `xmin` in production).
+- [x] ADR-06 amended (§2.7) and ADR-02 amended (§2.3, C-27); Spec 005 §10 obligation closed by reference.
+- [x] Migration script applied by the owner as `postgres` before the merge (2026-11-08).
+- [x] PR description contains the validation table, the evidence of §8.1 and the mutation audit (10 of 10 detected; owner's predictions for M1 to M3 exact in number and set).
 
 ### 8.1 Delivery, evidence and audit
 
@@ -217,11 +217,46 @@ Claude Code stops and reports instead of continuing when: a test contradicts the
 
 **GitHub (`gh`, installed and authenticated by the owner on 2026-11-08):** within an approved handoff, Claude Code may verify the branch and repository, push the work branch, create the PR **as Draft**, load its description and evidence, follow CI and report the PR URL. Marking it Ready for Review and merging stay with the owner.
 
-## 9. Validation (filled in the closing commit)
+## 9. Validation
+
+PR #15 (merge `bc7e10d`, CI run #44 green, Render *Live* `bc7e10d`, `/health` 200). Suite 457 / 457. Mutation audit M1 to M10: all detected, none invalid (§8.1, C-33); evidence kept outside the repository.
 
 | Requirement | Test | Result | Evidence |
 | --- | --- | --- | --- |
-| | | | |
+| R-01 | `ClavesDePlanillaTests.T14_los_cinco_estados…`, `T14_un_estado_de_partido_fuera…`; `PlanillaTests.T04_*` | pass | PR #15 |
+| R-02 | `PlanillaTests.T04_*`, `T22_*`; `ClavesDePlanillaTests.T14_una_segunda_version_igual…` | pass | PR #15 |
+| R-03 | `ClavesDePlanillaTests.T14_una_segunda_fila_SinAutor…`, `T14_un_gol_SinAutor_con_inscripcion…`, `T14_un_gol_de_jugador_sin_inscripcion…`; `ValidadorDePlanillaTests.T02_*` | pass | PR #15 |
+| R-04 | `ClavesDePlanillaTests.T14_una_tarjeta_de_cantidad_10…`, `T14_una_segunda_tarjeta_del_mismo_color…` | pass | PR #15 |
+| R-05 | `ClavesDePlanillaTests.T14_cada_clave_foranea_nueva…` (6), `T14_…aleatorios…`, `T14_un_gol_cuya_inscripcion_es_de_otro_torneo…`; Spec 005 T-23, T-33 | pass | PR #15 |
+| R-06 | `ClavesDePlanillaTests.T15_*` (6 + 1 + 1), `R06_cada_tabla…` (3); Spec 005 T-25 | pass | PR #15 |
+| R-07 | `ConcurrenciaDePlanillaTests.T21_*` (with C-32) | pass | PR #15 |
+| R-08 | `PlanillaTests.T12_*`, `T04_*` | pass | PR #15 |
+| R-09 | `PlanillaTests.T04_*`, `T09_*`, `T11_*` | pass | PR #15 |
+| R-10 | `PlanillaTests.T12_*`, `T09_un_cuerpo_del_GET_enviado_sin_la_transformacion…` | pass | PR #15 |
+| R-11 | `ValidadorDePlanillaTests.T03_*`; `PlanillaTests.T11_*`, `T22_*` | pass | PR #15 |
+| R-12 | `ValidadorDePlanillaTests.T01_*`, `T02_*`; `PlanillaTests.T11_*` | pass | PR #15 |
+| R-13 | `ValidadorDePlanillaTests.T01_*`; `PlanillaTests.T11_*` | pass | PR #15 |
+| R-14 | `ReglaDeRectificacionTests.*`; `PlanillaTests.T24_*` (5) | pass | PR #15 |
+| R-15 | `PlanillaTests.T10_*`, `T13_*` | pass | PR #15 |
+| R-16 | `PlanillaTests.T09_*` (3), `T06_*`, `T24_el_motivo_pertenece…` | pass | PR #15 |
+| R-17 | `PlanillaTests.T05_*`, `T09_*`, `T25_*`, `T24_*`; `ConcurrenciaDePlanillaTests.T08c` | pass | PR #15 |
+| R-18 | `PlanillaTests.T07_*`, `T24_una_peticion_vieja…` | pass | PR #15 |
+| R-19 | `PlanillaTests.T04_*`, `T06_*`, `T22_*` | pass | PR #15 |
+| R-20 | `ConcurrenciaDePlanillaTests.T08a/b/c`, `T23a/b/c`; `PartidoGuardadoTests.T26_*` (4) | pass | PR #15 |
+| R-21 | `PlanillaTests.T06_*`, `T13_*`; `ClavesDePlanillaTests.T15_*` | pass | PR #15 |
+| R-22 | `PlanillaTests.T20_*` | pass | PR #15 |
+| R-23 | `PartidoGuardadoTests.T16_el_nombre_estable…`; `PipelineArquitecturaTests.T25_*` | pass | PR #15 |
+| R-24 | `PartidoGuardadoTests.T16_*` (2); `ConcurrenciaDePlanillaTests.T08*`, `T23*` | pass | PR #15 |
+| R-25 | `PipelineArquitecturaTests.T25_los_eventos_de_produccion…` and its canaries | pass | PR #15 |
+| R-26 | `ImportacionConResultadosTests.T17a_*` (3) | pass | PR #15 |
+| R-27 | `ImportacionConResultadosTests.T17b_*` | pass | PR #15 |
+| R-28 | `ImportacionConResultadosTests.T17c_*`, `T17d_*` | pass | PR #15 |
+| R-29 | `ImportacionConResultadosTests.T17e_*` (2) | pass | PR #15 |
+| R-30 | `ImportacionConResultadosTests.T17_una_importacion_que_cambia_el_calendario…`; `ConcurrenciaDePlanillaTests.T23b/c` | pass | PR #15 |
+| R-31 | `ModeloDeTorneosArquitecturaTests.T25_*`, `ConjuntoDeTablasConTenantTests.T25_*` | pass | PR #15 |
+| R-32 | `ConsultasSegurasTests.Sitios_permitidos…` (F4 for `PlanillaPostPartido`), `Produccion_no_usa_consultas_inseguras…` | pass | PR #15 |
+
+**Production (2026-11-08, as `postgres`):** migration `20261109010235_PlanillaPostPartido` recorded (5 migrations in total); `planillas`, `goles` and `tarjetas` have RLS enabled and 1 policy each; `goalflow_app` has `SELECT` and `INSERT` on the three and no `UPDATE` or `DELETE` (12 of 12 privileges as expected); `ck_partidos_estado` (five states) and `ck_partidos_version` present; the 6 new foreign keys all start with (`tenant_id`, `torneo_id`); `ux_goles_tenant_planilla_tipo_equipo_inscripcion` present; no user column `xmin` on `partidos`. `goalflow.*` holds no league yet (no real data before the backup workflow).
 
 ## 10. Risks and open items
 
