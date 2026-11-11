@@ -33,6 +33,14 @@ public static class RegistroDeIa
             services.AddOptions<OpcionesDeIA>().ValidateOnStart();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<OpcionesDeIA>, ValidadorDeOpcionesDeIA>());
             services.AddConsumidorDeEvento<PartidoGuardado, ConsumidorDeResumenDePartido>();
+
+            // El único camino al proveedor: un HttpClient tipado y propio, sin Polly ni paquetes nuevos (ADR-12 §2.1). El límite lo
+            // pone el consumidor con TimeoutDeLlamada, no el cliente. Apagada la IA, esto no se registra (R-07).
+            services.AddHttpClient<IGeneradorDeTexto, AdaptadorAnthropic>(cliente =>
+            {
+                cliente.BaseAddress = new Uri(AdaptadorAnthropic.UrlBase);
+                cliente.Timeout = Timeout.InfiniteTimeSpan;
+            });
         }
 
         return services;
