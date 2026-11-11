@@ -124,7 +124,7 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
 
         var resumen = Assert.Single(await host.ResumenesDe(p));
         Assert.Equal(("Plantilla", "PorVerificar", null), (resumen.Origen, resumen.Estado, resumen.Motivo));
-        Assert.Equal("Equipo Uno 3-0 Equipo Dos, resultado oficial por W.O..", resumen.Texto);
+        Assert.Equal("Equipo Uno 3-0 Equipo Dos, resultado oficial por W.O.", resumen.Texto); // R-11 v3 (C-24): un solo punto
         Assert.Equal(0, await host.Llamadas(p));
         Assert.Equal(0, await host.Contadores(LigaA, host.MesActual));
         Assert.Equal(0, host.Control.Conteos + host.Control.Generaciones);

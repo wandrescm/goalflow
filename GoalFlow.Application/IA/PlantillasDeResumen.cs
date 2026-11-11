@@ -40,7 +40,8 @@ public static class PlantillasDeResumen
                     CodigosDeTorneos.Otro => "decisión administrativa",
                     _ => throw new PlanillaIncoherenteException(),
                 };
-                return $"{e.Local} {oficial.Local}-{oficial.Visitante} {e.Visitante}, resultado oficial por {motivo}.";
+                // R-11 (v3, ADR-12 C-24): el punto final solo si el motivo no termina ya en uno; «W.O.» queda con un único punto.
+                return $"{e.Local} {oficial.Local}-{oficial.Visitante} {e.Visitante}, resultado oficial por {motivo}{(motivo.EndsWith('.') ? string.Empty : ".")}";
 
             default:
                 throw new ArgumentException("Solo Jugado y Adjudicado tienen plantilla.", nameof(e));

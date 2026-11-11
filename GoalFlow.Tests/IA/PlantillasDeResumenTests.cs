@@ -42,21 +42,36 @@ public class PlantillasDeResumenTests
             PlantillasDeResumen.Plantilla(Entrada(Jugado(0, 0) with { TarjetasInformadas = false })));
     }
 
+    // Spec 007 v3 R-11 (ADR-12 C-24): el punto final se agrega solo si el motivo no termina ya en uno. Cada caso lleva el final exacto.
     [Theory]
     [InlineData(CodigosDeTorneos.WalkOver, "W.O.")]
-    [InlineData(CodigosDeTorneos.Sancion, "sanción")]
-    [InlineData(CodigosDeTorneos.Otro, "decisión administrativa")]
-    public void T04_plantilla_de_Adjudicado_con_cada_motivo_y_con_o_sin_marcador_deportivo(string motivo, string texto)
+    [InlineData(CodigosDeTorneos.Sancion, "sanción.")]
+    [InlineData(CodigosDeTorneos.Otro, "decisión administrativa.")]
+    public void T04_plantilla_de_Adjudicado_con_cada_motivo_y_con_o_sin_marcador_deportivo(string motivo, string finalEsperado)
     {
         var sinDeportivo = DatosDePrueba.Vacio(CodigosDeTorneos.Adjudicado) with
         {
             Marcador = null, Oficial = new MarcadorDelPartido(3, 0), Motivo = motivo,
         };
         var conDeportivo = sinDeportivo with { Marcador = new MarcadorDelPartido(1, 4) };
-        var esperado = $"Equipo Uno 3-0 Equipo Dos, resultado oficial por {texto}.";
+        var esperado = $"Equipo Uno 3-0 Equipo Dos, resultado oficial por {finalEsperado}";
 
         Assert.Equal(esperado, PlantillasDeResumen.Plantilla(Entrada(sinDeportivo)));
         Assert.Equal(esperado, PlantillasDeResumen.Plantilla(Entrada(conDeportivo))); // el marcador deportivo se ignora
+    }
+
+    [Fact]
+    public void T04_el_texto_dorado_del_Adjudicado_con_WalkOver_termina_en_exactamente_un_punto()
+    {
+        var datos = DatosDePrueba.Vacio(CodigosDeTorneos.Adjudicado) with
+        {
+            Marcador = null, Oficial = new MarcadorDelPartido(3, 0), Motivo = CodigosDeTorneos.WalkOver,
+        };
+
+        var texto = PlantillasDeResumen.Plantilla(Entrada(datos));
+
+        Assert.Equal("Equipo Uno 3-0 Equipo Dos, resultado oficial por W.O.", texto);
+        Assert.DoesNotContain("..", texto);
     }
 
     [Fact]
@@ -107,6 +122,43 @@ public class PlantillasDeResumenTests
             "Equipo Uno 4-3 Equipo Dos. Goles de Equipo Uno: Jugador Dos (2), Jugador Tres, 1 sin autor. "
             + "Goles de Equipo Dos: Jugador Cuatro, autogol de Jugador Uno (Equipo Uno) (2). "
             + "Tarjetas: Jugador Dos (Equipo Uno) roja x2, Jugador Cuatro (Equipo Dos) amarilla, Jugador Cuatro (Equipo Dos) azul.",
+            PlantillasDeResumen.BorradorExtendido(Entrada(datos), LongitudMaxima));
+    }
+
+    // Spec 007 v3 R-11 (ADR-12 C-25): formato de autogoles documentado tal como se implementó en la Fase A. Casos nuevos: nacen en verde.
+    [Fact]
+    public void T04_dos_autogoles_del_mismo_jugador_se_escriben_con_la_cantidad_al_final_del_elemento()
+    {
+        var datos = Jugado(0, 2) with
+        {
+            Autogoles = [new AutogolDelPartido("Jugador Uno", "JUG-001", LadoDelEquipo.Local, 2)],
+            TarjetasInformadas = true,
+        };
+
+        Assert.Equal(
+            "Equipo Uno 0-2 Equipo Dos. Goles de Equipo Dos: autogol de Jugador Uno (Equipo Uno) (2). Sin tarjetas.",
+            PlantillasDeResumen.BorradorExtendido(Entrada(datos), LongitudMaxima));
+    }
+
+    [Fact]
+    public void T04_en_un_mismo_lado_van_primero_los_goleadores_luego_los_autogoles_y_al_final_los_goles_sin_autor()
+    {
+        var datos = Jugado(0, 4) with
+        {
+            Goles = [new GolDelPartido(LadoDelEquipo.Visitante, "Jugador Cuatro", "JUG-004", 1)],
+            // Dos autogoles de jugadores distintos, dados en el orden inverso al del texto: el orden lo fija la entrada canónica.
+            Autogoles =
+            [
+                new AutogolDelPartido("Jugador Uno", "JUG-001", LadoDelEquipo.Local, 1),
+                new AutogolDelPartido("Jugador Dos", "JUG-002", LadoDelEquipo.Local, 1),
+            ],
+            GolesSinAutor = new MarcadorDelPartido(0, 1),
+            TarjetasInformadas = true,
+        };
+
+        Assert.Equal(
+            "Equipo Uno 0-4 Equipo Dos. Goles de Equipo Dos: Jugador Cuatro, "
+            + "autogol de Jugador Dos (Equipo Uno), autogol de Jugador Uno (Equipo Uno), 1 sin autor. Sin tarjetas.",
             PlantillasDeResumen.BorradorExtendido(Entrada(datos), LongitudMaxima));
     }
 
