@@ -84,7 +84,7 @@ public class ModeloDeTorneosArquitecturaTests
             new[]
             {
                 "Equipo", "EntregaEvento", "Torneo", "Fase", "EquipoTorneo", "Jugador", "InscripcionJugador", "Partido",
-                "Planilla", "Gol", "Tarjeta",
+                "Planilla", "Gol", "Tarjeta", "ResumenPartido", "LlamadaIa", "PresupuestoIa",
             }.Order().ToArray(),
             evaluadas);
     }
@@ -117,6 +117,7 @@ public class ConjuntoDeTablasConTenantTests(BaseDeAislamiento db)
             {
                 "equipos", "entregas_eventos", "torneos", "fases", "equipos_torneo", "jugadores",
                 "inscripciones_jugador", "partidos", "admins_liga", "planillas", "goles", "tarjetas",
+                "resumenes_partido", "llamadas_ia", "presupuestos_ia",
             }.Order().ToArray(),
             tablas.Order().ToArray());
     }

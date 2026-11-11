@@ -62,9 +62,9 @@ public class MultiTenancyArquitecturaTests
     }
 
     [Theory] // Spec 005 T-24 (R-33)
-    [InlineData(ReglasDeArquitectura.NombreDomain, new[] { "Ligas", "Tenancy", "Torneos" })]
-    [InlineData(ReglasDeArquitectura.NombreApplication, new[] { "Ligas", "Tenancy", "Torneos" })]
-    [InlineData(ReglasDeArquitectura.NombreInfrastructure, new[] { "Ligas", "Torneos" })]
+    [InlineData(ReglasDeArquitectura.NombreDomain, new[] { "IA", "Ligas", "Tenancy", "Torneos" })]
+    [InlineData(ReglasDeArquitectura.NombreApplication, new[] { "IA", "Ligas", "Tenancy", "Torneos" })]
+    [InlineData(ReglasDeArquitectura.NombreInfrastructure, new[] { "IA", "Ligas", "Torneos" })]
     public void T24_el_grafo_evalua_exactamente_los_modulos_esperados_por_capa(string raiz, string[] esperados)
     {
         var tipos = Produccion.SelectMany(a => a.GetTypes());

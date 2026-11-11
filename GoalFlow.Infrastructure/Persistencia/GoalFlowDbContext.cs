@@ -1,8 +1,10 @@
 using GoalFlow.Application.Mensajeria;
 using GoalFlow.Application.Tenancy;
+using GoalFlow.Domain.IA;
 using GoalFlow.Domain.Ligas;
 using GoalFlow.Domain.Tenancy;
 using GoalFlow.Domain.Torneos;
+using GoalFlow.Infrastructure.IA;
 using GoalFlow.Infrastructure.Mensajeria;
 using GoalFlow.Infrastructure.Torneos;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +31,9 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
     public DbSet<Planilla> Planillas => Set<Planilla>();
     public DbSet<Gol> Goles => Set<Gol>();
     public DbSet<Tarjeta> Tarjetas => Set<Tarjeta>();
+    public DbSet<ResumenPartido> ResumenesPartido => Set<ResumenPartido>();
+    public DbSet<LlamadaIa> LlamadasIa => Set<LlamadaIa>();
+    public DbSet<PresupuestoIa> PresupuestosIa => Set<PresupuestoIa>();
 
     // El filtro referencia este miembro para evaluarse por consulta; EF Core cachea el modelo (ADR-14 §2.2).
     private TenantId TenantActual => tenantContext.Current;
@@ -127,6 +132,23 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
         {
             ConfiguracionDeTorneos.Tarjeta(tarjeta);
             tarjeta.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+
+        // Módulo IA (Spec 007 R-04): mismo filtro Tenant, y RLS en la misma migración.
+        modelBuilder.Entity<ResumenPartido>(resumen =>
+        {
+            ConfiguracionDeIa.Resumen(resumen);
+            resumen.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<LlamadaIa>(llamada =>
+        {
+            ConfiguracionDeIa.Llamada(llamada);
+            llamada.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+        modelBuilder.Entity<PresupuestoIa>(presupuesto =>
+        {
+            ConfiguracionDeIa.Presupuesto(presupuesto);
+            presupuesto.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
         });
     }
 

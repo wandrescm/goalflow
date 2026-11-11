@@ -23,6 +23,267 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("GoalFlow.Domain.IA.LlamadaIa", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("ConciliadaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("conciliada_en");
+
+                    b.Property<long?>("Costo")
+                        .HasColumnType("bigint")
+                        .HasColumnName("costo");
+
+                    b.Property<DateTime>("CreadoEn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creado_en")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("estado");
+
+                    b.Property<string>("Huella")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("huella");
+
+                    b.Property<int>("IntentoEntrega")
+                        .HasColumnType("integer")
+                        .HasColumnName("intento_entrega");
+
+                    b.Property<string>("Mes")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("mes");
+
+                    b.Property<int>("Numero")
+                        .HasColumnType("integer")
+                        .HasColumnName("numero");
+
+                    b.Property<Guid>("PartidoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("partido_id");
+
+                    b.Property<long>("Reserva")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reserva");
+
+                    b.Property<string>("Resultado")
+                        .HasColumnType("text")
+                        .HasColumnName("resultado");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int?>("TokensEntrada")
+                        .HasColumnType("integer")
+                        .HasColumnName("tokens_entrada");
+
+                    b.Property<int?>("TokensSalida")
+                        .HasColumnType("integer")
+                        .HasColumnName("tokens_salida");
+
+                    b.Property<Guid>("TorneoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("torneo_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_llamadas_ia_tenant_id");
+
+                    b.HasIndex("TenantId", "TorneoId", "PartidoId");
+
+                    b.HasIndex("TenantId", "PartidoId", "Huella", "Numero")
+                        .IsUnique()
+                        .HasDatabaseName("ux_llamadas_ia_tenant_partido_huella_numero");
+
+                    b.ToTable("llamadas_ia", "goalflow", t =>
+                        {
+                            t.HasCheckConstraint("ck_llamadas_ia_conciliada_en_segun_estado", "(estado = 'Conciliada') = (conciliada_en is not null)");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_costo", "costo is null or costo >= 0");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_costo_segun_estado", "(estado = 'Conciliada') = (costo is not null)");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_estado", "estado in ('Reservada', 'Conciliada')");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_intento_entrega", "intento_entrega >= 1");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_mes", "mes ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_numero", "numero >= 1");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_reserva", "reserva > 0");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_resultado", "resultado is null or char_length(resultado) between 1 and 64");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_resultado_segun_estado", "(estado = 'Conciliada') = (resultado is not null)");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_tokens", "coalesce(tokens_entrada, 0) >= 0 and coalesce(tokens_salida, 0) >= 0");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_tokens_entrada_segun_estado", "(estado = 'Conciliada') = (tokens_entrada is not null)");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_tokens_salida_segun_estado", "(estado = 'Conciliada') = (tokens_salida is not null)");
+
+                            t.HasCheckConstraint("ck_llamadas_ia_version", "version >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.IA.PresupuestoIa", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<long>("Consumido")
+                        .HasColumnType("bigint")
+                        .HasColumnName("consumido");
+
+                    b.Property<string>("Mes")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("mes");
+
+                    b.Property<long>("Reservado")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reservado");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<long>("Tope")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tope");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Mes")
+                        .IsUnique()
+                        .HasDatabaseName("ux_presupuestos_ia_tenant_mes");
+
+                    b.ToTable("presupuestos_ia", "goalflow", t =>
+                        {
+                            t.HasCheckConstraint("ck_presupuestos_ia_consumido", "consumido >= 0");
+
+                            t.HasCheckConstraint("ck_presupuestos_ia_mes", "mes ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'");
+
+                            t.HasCheckConstraint("ck_presupuestos_ia_reservado", "reservado >= 0");
+
+                            t.HasCheckConstraint("ck_presupuestos_ia_tope", "tope > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.IA.ResumenPartido", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreadoEn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creado_en")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("estado");
+
+                    b.Property<string>("Huella")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("huella");
+
+                    b.Property<Guid?>("LlamadaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("llamada_id");
+
+                    b.Property<string>("Modelo")
+                        .HasColumnType("text")
+                        .HasColumnName("modelo");
+
+                    b.Property<string>("MotivoBorrador")
+                        .HasColumnType("text")
+                        .HasColumnName("motivo_borrador");
+
+                    b.Property<string>("Origen")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("origen");
+
+                    b.Property<Guid>("PartidoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("partido_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("texto");
+
+                    b.Property<Guid>("TorneoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("torneo_id");
+
+                    b.Property<int>("VersionOrigen")
+                        .HasColumnType("integer")
+                        .HasColumnName("version_origen");
+
+                    b.Property<string>("VersionPrompt")
+                        .HasColumnType("text")
+                        .HasColumnName("version_prompt");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "LlamadaId");
+
+                    b.HasIndex("TenantId", "PartidoId", "Huella")
+                        .IsUnique()
+                        .HasDatabaseName("ux_resumenes_partido_tenant_partido_huella");
+
+                    b.HasIndex("TenantId", "TorneoId", "PartidoId");
+
+                    b.ToTable("resumenes_partido", "goalflow", t =>
+                        {
+                            t.HasCheckConstraint("ck_resumenes_partido_estado", "estado in ('PorVerificar', 'Borrador')");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_huella", "huella ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_llamada_segun_origen", "(origen = 'Modelo') = (llamada_id is not null)");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_modelo_segun_origen", "(origen = 'Modelo') = (modelo is not null)");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_motivo", "motivo_borrador is null or motivo_borrador in ('presupuesto', 'limite_de_llamadas', 'solicitud_invalida', 'entrada_excedida', 'rechazo_del_modelo')");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_motivo_segun_estado", "(estado = 'Borrador') = (motivo_borrador is not null)");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_origen", "origen in ('Modelo', 'Plantilla')");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_texto", "char_length(texto) between 1 and 4000");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_version_origen", "version_origen >= 1");
+
+                            t.HasCheckConstraint("ck_resumenes_partido_version_prompt_segun_origen", "(origen = 'Modelo') = (version_prompt is not null)");
+                        });
+                });
+
             modelBuilder.Entity("GoalFlow.Domain.Ligas.AdminLiga", b =>
                 {
                     b.Property<Guid>("UsuarioId")
@@ -652,6 +913,45 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
                         .HasDatabaseName("ux_entregas_eventos_clave_logica");
 
                     b.ToTable("entregas_eventos", "goalflow");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.IA.LlamadaIa", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Torneos.Partido", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId", "PartidoId")
+                        .HasPrincipalKey("TenantId", "TorneoId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_llamadas_ia_partidos");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.IA.PresupuestoIa", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Ligas.Liga", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_presupuestos_ia_ligas");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.IA.ResumenPartido", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.IA.LlamadaIa", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LlamadaId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_resumenes_partido_llamadas");
+
+                    b.HasOne("GoalFlow.Domain.Torneos.Partido", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId", "PartidoId")
+                        .HasPrincipalKey("TenantId", "TorneoId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resumenes_partido_partidos");
                 });
 
             modelBuilder.Entity("GoalFlow.Domain.Ligas.AdminLiga", b =>
