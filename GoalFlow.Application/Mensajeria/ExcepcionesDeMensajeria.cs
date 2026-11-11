@@ -29,3 +29,13 @@ public class FalloPermanenteException(string codigoDeRazon, Exception? interna =
 {
     public string CodigoDeRazon { get; } = codigoDeRazon;
 }
+
+/// <summary>
+/// La publicación dirigida (Spec 007 R-31) nombró un consumidor que no está registrado para ese tipo de evento en este host.
+/// Lleva el nombre del consumidor, que es un código estable y no un dato del usuario.
+/// </summary>
+public class ConsumidorNoRegistradoException(string consumidor)
+    : Exception("El consumidor no está registrado para ese evento en este host.")
+{
+    public string Consumidor { get; } = consumidor;
+}

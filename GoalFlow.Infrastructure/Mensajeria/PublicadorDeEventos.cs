@@ -35,4 +35,19 @@ public sealed class PublicadorDeEventos(
 
         avisos.Anotar(evento.TenantId);
     }
+
+    public void PublicarPara<TEvento>(TEvento evento, string consumidor) where TEvento : IEventoDeIntegracion
+    {
+        if (contexto.Database.CurrentTransaction is null)
+            throw new TransaccionRequeridaException();
+
+        // Solo cuenta un consumidor registrado para ESTE tipo de evento: un nombre que existe para otro evento no sirve (R-31).
+        var nombreDelEvento = TEvento.NombreDelEvento;
+        if (!consumidores.Any(c => c.NombreDelEvento == nombreDelEvento && c.Nombre == consumidor))
+            throw new ConsumidorNoRegistradoException(consumidor);
+
+        contexto.EntregasEventos.Add(EntregaEvento.Nueva(
+            evento.TenantId, Guid.NewGuid(), nombreDelEvento, evento.AgregadoId, evento.Version, consumidor));
+        avisos.Anotar(evento.TenantId);
+    }
 }

@@ -24,6 +24,7 @@ public static class RegistroDeIa
         services.AddScoped<IAlmacenDeLlamadas, AlmacenDeLlamadas>();
         services.AddScoped<IAlmacenDeResumenes, AlmacenDeResumenes>();
         services.AddScoped<ILectorDePartidoParaResumen, LectorDePartidoParaResumen>();
+        services.AddScoped<IListadoDePartidosConResultado, ListadoDePartidosConResultado>();
 
         services.AddOptions<OpcionesDeIA>().BindConfiguration(OpcionesDeIA.Seccion);
         services.TryAddSingleton(proveedor => proveedor.GetRequiredService<IOptions<OpcionesDeIA>>().Value);
@@ -41,6 +42,13 @@ public static class RegistroDeIa
                 cliente.BaseAddress = new Uri(AdaptadorAnthropic.UrlBase);
                 cliente.Timeout = Timeout.InfiniteTimeSpan;
             });
+
+            // El backfill (R-32): el servicio y su puerto existen solo con la IA habilitada; el servicio de arranque, además, solo con
+            // su bandera. Sin la bandera nada lo corre y no hay ningún endpoint que lo dispare.
+            services.AddScoped<IPublicacionDeBackfill, PublicacionDeBackfill>();
+            services.AddSingleton<BackfillDeResumenes>();
+            if (configuracion.GetValue<bool>($"{OpcionesDeIA.Seccion}:Backfill:EjecutarAlArrancar"))
+                services.AddHostedService<RellenoAlArrancar>();
         }
 
         return services;
