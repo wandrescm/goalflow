@@ -1,8 +1,8 @@
 # ADR-02: Post-save pipeline (durable outbox with an in-memory wake-up)
 
 - **Status:** Accepted
-- **Date:** 2026-11-04 (S2D5, H07; proposed and accepted the same day after the owner's review of C-11 and C-12). Revised on 2026-11-05 after the mutation audit (§2.6, C-25, C-26). Amended on 2026-11-08 with Spec 006 v3 (§2.3, C-27), accepted by the owner the same day.
-- **Related:** ADR-03 (modular monolith; requires an amendment to §7), ADR-05 (hosting, connection budget, R-11), ADR-14 (multi-tenancy; requires an amendment to §2.3), ADR-12 (LLM cost and A-01 policy, pending), Spec 004
+- **Date:** 2026-11-04 (S2D5, H07; proposed and accepted the same day after the owner's review of C-11 and C-12). Revised on 2026-11-05 after the mutation audit (§2.6, C-25, C-26). Amended on 2026-11-08 with Spec 006 v3 (§2.3, C-27), accepted by the owner the same day. Amended on 2026-11-11 with ADR-12 and Spec 007 (§2.3 targeted publication and the A-01 backfill; §2.10 Polly; C-08, C-09 closed; C-28), accepted by the owner the same day.
+- **Related:** ADR-03 (modular monolith; requires an amendment to §7), ADR-05 (hosting, connection budget, R-11), ADR-14 (multi-tenancy; requires an amendment to §2.3), ADR-12 (LLM cost and A-01 policy, accepted 2026-11-11), Spec 004, Spec 007
 
 ## 1. Context
 
@@ -55,14 +55,15 @@ Facts that shape the decision:
 - The logical key deduplicates **the same aggregate version**. A backfill that reads version *n* while the Admin saves version *n + 1* creates two different keys, and both rows are legitimate. Any rule of the form "one effect per aggregate, whatever the version" belongs to the consumer (for A-01, ADR-12), not to the outbox.
 - Publishing an event type that has no registered consumer writes no rows and logs at `Information`.
 - **Consequence (accepted):** a consumer registered later does not receive events published before it existed. The outbox delivers work for events published from now on; historical work comes from the source of truth (the saved aggregates), never from replaying old events.
-- **Obligation for H14 (A-01):** in the milestone, `PartidoGuardado` has no consumer between H12 and H14, so matches saved in that window would never get a summary. A-01 therefore ships with an **explicit backfill**:
+- **Targeted publication (amendment of 2026-11-11, ADR-12 §2.8).** The publishing port also offers an operation that writes **one** delivery row for **one named consumer** registered for the event type in this host, and throws a specific exception if that consumer is not registered. It follows every other rule of publication: it requires an active transaction, never saves, sends its hint after the commit, and its duplicates surface as the duplicate-delivery exception with the pending keys. It exists for idempotent publication on behalf of a single consumer. With the fan-out operation, a backfill for one consumer is coupled to every other consumer's rows: one consumer's duplicate rolls back the other's row in the same save, and a missing row of another consumer gets enqueued as a side effect (C-28).
+- **Obligation for H14 (A-01), fulfilled by Spec 007.** In the milestone, `PartidoGuardado` has no consumer between H12 and H14, so matches saved in that window would never get a summary. A-01 therefore ships with an **explicit backfill**:
   - it enumerates tenants through the tenant-source port and works one tenant scope at a time;
   - it reads the **current** state of each eligible match, not its version history, so a match corrected three times yields at most one delivery;
-  - it creates deliveries through the same publishing port, as an **idempotent publication**: one aggregate per transaction, an optional existence check, and the duplicate-delivery exception caught and counted as done;
-  - it respects the A-01 budget and generation policy of ADR-12;
-  - it has tests for isolation, coverage of matches saved before A-01 existed and deduplication. Deduplication is tested twice: running it twice in sequence creates nothing new, and two **concurrent** runs over the same match end with exactly one row, with neither run failing.
+  - it creates deliveries through the **targeted** publication for A-01 only, as an **idempotent publication**: one aggregate per DI scope and transaction, and the duplicate-delivery exception caught and counted as done;
+  - it respects the A-01 budget and generation policy of ADR-12, and it runs once per process start only when the owner sets its flag (ADR-12 §2.8);
+  - it has tests for isolation, coverage of matches saved before A-01 existed, deduplication and other consumers. Deduplication is tested twice: running it twice in sequence creates nothing new, and two **concurrent** runs over the same match end with exactly one row, with neither run failing (Spec 007 T-27).
 
-  It is not built in H08, because `Partido` does not exist yet.
+  It was not built in H08, because `Partido` did not exist yet.
 
 ### 2.4 The delivery table
 
@@ -135,8 +136,8 @@ Tests use shorter values through configuration.
 ### 2.10 Out of scope for the milestone
 
 - A retention or cleanup job for completed rows. At the pilot's volume (two leagues, tens of matches per week) the table stays small. It is revisited after the milestone.
-- Polly or other in-memory retries. The outbox already provides durable retries; in-memory resilience is evaluated in ADR-12 for the LLM HTTP adapter.
-- Any LLM client, A-01, notifications or statistics logic.
+- Polly or other in-memory retries. The outbox already provides durable retries. ADR-12 decided against Polly for the LLM HTTP adapter as well (ADR-12 §2.6, C-10): in-memory retries would multiply billed calls and hide uncertain calls from the budget ledger.
+- Any LLM client, A-01, notifications or statistics logic (A-01 and its LLM client: ADR-12 and Spec 007).
 - An Admin view of failed deliveries; `Fallida` rows are visible through logs and SQL as `postgres`.
 
 ## 3. Rejected alternatives
@@ -205,8 +206,8 @@ Deferred to H12 and ADR-12/H14: the real producer's atomicity test, "never publi
 - **C-05** *Where does the outbox live?* In the shared namespace `Mensajeria`; the tenant-source port is implemented in `Infrastructure.Ligas` (dependency inversion). Decided by the owner on 2026-11-04.
 - **C-06** *How is a claim atomic without raw SQL?* A compare-and-swap with `ExecuteUpdateAsync`, with the database clock deciding lease expiry, plus fencing by lease token on completion. Both proposed by the owner on 2026-11-04. The mentor added the active-transaction check (§2.6), because without it a missing transaction is indistinguishable from a lost race.
 - **C-07** *One loop or separate startup and periodic sweeps?* One loop; startup is its first pass. Proposed by the mentor and accepted by the owner on 2026-11-04.
-- **C-08** *Polly in H08?* No. Durable retries live in the outbox; in-memory resilience is evaluated in ADR-12. Proposed by the mentor and accepted by the owner on 2026-11-04.
-- **C-09** *Does a corrected match trigger a new A-01 summary?* Not decided here. The owner's hypothesis (one generation per match, a summary shown only if its source version equals the match version, no automatic retry after an uncertain call) goes to ADR-12. It must be weighed there against late corrections of goal scorers, a common case in amateur leagues. Raised by the mentor; agreed by the owner on 2026-11-04.
+- **C-08** *Polly in H08?* No. Durable retries live in the outbox; in-memory resilience is evaluated in ADR-12. Proposed by the mentor and accepted by the owner on 2026-11-04. **Closed on 2026-11-11:** no Polly, in the pipeline or in the LLM adapter (ADR-12 C-10).
+- **C-09** *Does a corrected match trigger a new A-01 summary?* Not decided here. The owner's hypothesis (one generation per match, a summary shown only if its source version equals the match version, no automatic retry after an uncertain call) goes to ADR-12. It must be weighed there against late corrections of goal scorers, a common case in amateur leagues. Raised by the mentor; agreed by the owner on 2026-11-04. **Closed on 2026-11-11 by ADR-12 §2.3 (C-02, C-05):** a summary is generated only for the current version and only when its input fingerprint is new; it is shown only while its fingerprint equals that of the current sheet. A late scorer correction therefore hides the old text and produces a new one.
 - **C-10** *Cache with `SizeLimit` in this block?* Only an architecture rule with a canary, with no cache in production code (§5). Decided by the owner on 2026-11-04.
 - **C-11** *One delivery row per consumer created at publish time, or separate event and delivery tables?* One row per consumer at publish time (§2.3). Proposed by the mentor on 2026-11-04. Accepted by the owner the same day, on one mandatory condition: A-01 ships in H14 with an explicit backfill from current match state, with tenant isolation, deduplication and tests. The owner's reasons: two tables would not solve A-01's gap by themselves, and replaying version history would generate unneeded summaries.
 - **C-12** *Initial values of §2.8?* Proposed by the mentor and accepted by the owner on 2026-11-04. They are configuration and can be changed without amending this ADR. The owner added that they are not latency guarantees (§2.8).
@@ -225,3 +226,4 @@ Deferred to H12 and ADR-12/H14: the real producer's atomicity test, "never publi
 - **C-24** *Can an exception in the loop take the API down?* Not any more: the loop catches everything except cancellation (§2.5). Raised by the mentor on 2026-11-04.
 - **C-20** *Who sends the hint, and when?* A scoped transaction interceptor, in its committed hook; none on rollback or dispose (§2.5). The producer has no notification code to forget. Raised by the owner on 2026-11-04 (review of Spec 004: no test pinned the moment of notification); mechanism proposed by the mentor.
 - **C-27** *Can a normal producer hit the duplicate-delivery exception?* Yes, when two writers of the same aggregate read the same version concurrently (§2.3). The first real producer, the score sheet, translates it into its version conflict (`409`). Raised by the mentor on 2026-11-08 (Spec 006 C-28).
+- **C-28** *Can a backfill for one consumer use the fan-out publication?* No. In one save, one consumer's duplicate rolls back the other consumers' rows, and a backfill for A-01 would also enqueue work for the others. A targeted publication for one named consumer is added (§2.3). Owner's prediction for the fan-out case (A-01 row present, other consumer's absent): 0 rows, correct. Decided by the owner on 2026-11-11 (ADR-12 C-12).

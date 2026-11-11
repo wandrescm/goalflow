@@ -81,11 +81,17 @@ Estructura (ADR-03, en `docs/adr/`):
 - CORS restringido a los orígenes del frontend; límite de frecuencia en endpoints públicos.
 - **Excepción temporal (Spec 002 §10):** `GET /{slug}/equipos` no tiene límite de frecuencia hasta verificar la IP real del cliente en Render (ADR-05 R-15). Responsable: el propietario. Fecha límite: antes de publicar el frontend, a más tardar el 2026-11-16. Pruebas pendientes: IP real, `X-Forwarded-For` falsificado y respuesta `429`. No agregues otro endpoint público sin límite.
 
-## Si se implementan funciones de IA
+## Funciones de IA (ADR-12, Spec 007)
 
-- El proveedor de LLM va detrás de una interfaz; una sola llamada por partido guardado y con tope de costo.
-- Un verificador determinista debe comprobar que cada número y nombre del texto generado exista en los datos de entrada antes de publicarlo.
-- Toda búsqueda vectorial se filtra por `TenantId`. Trata nombres de equipo y textos de usuarios como datos no confiables (riesgo de inyección de prompts).
+- El proveedor de LLM va detrás de `IGeneradorDeTexto`; adaptador `HttpClient` propio, sin paquetes nuevos y sin Polly. `IA:Habilitada` es `false` por defecto: con la IA apagada no se registra el consumidor `ia.resumen-partido`, no corre el backfill y no se llama al proveedor. Nunca la enciendas en un handoff.
+- Se resume solo la versión vigente; se genera como máximo un resumen por (partido, huella de la entrada) y como máximo 3 llamadas pagadas por (partido, huella), contadas en la base de datos. Las plantillas deterministas no llaman al modelo ni tocan el presupuesto.
+- Presupuesto por liga y por mes en `presupuestos_ia`: se cuentan los tokens con el endpoint gratuito y se reserva **antes** de llamar, con un `ExecuteUpdateAsync` condicionado (compare-and-swap), nunca verificar y luego insertar. Se concilia después con el uso reportado. Una llamada incierta (sin respuesta) conserva su reserva; un exceso de costo se registra completo, nunca se recorta.
+- Montos en micro-dólares enteros, redondeados hacia arriba. El mes es el mes UTC del `TimeProvider` inyectado; la conciliación actualiza el mes de la llamada.
+- Un verificador determinista debe comprobar que cada número y nombre del texto generado exista en los datos de entrada antes de publicarlo (H15). Hasta entonces nada se publica: los resúmenes quedan `PorVerificar` o `Borrador`.
+- La entrada al modelo es el JSON canónico de la Spec 007 R-08: sin identificadores, códigos, `sub` del Admin ni texto libre. Los nombres de equipos y jugadores son datos no confiables (riesgo de inyección de prompts) y viajan solo dentro del bloque de datos del mensaje de usuario, nunca en el texto de sistema.
+- Nunca registres en logs la entrada, el texto de sistema, el texto generado, nombres, la clave de API, cuerpos de solicitud o respuesta, valores de encabezados ni mensajes de excepción.
+- En CI no hay llamadas reales al proveedor: se usa un generador falso y un `HttpMessageHandler` de prueba. La prueba de humo con la clave real solo corre si existe su variable de entorno; sin ella se informa como omitida, nunca como aprobada.
+- Toda búsqueda vectorial se filtra por `TenantId`.
 
 ## Definición de terminado
 
