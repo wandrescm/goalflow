@@ -3,6 +3,7 @@ using GoalFlow.Application.Mensajeria;
 using GoalFlow.Application.Persistencia;
 using GoalFlow.Application.Torneos.Contracts;
 using GoalFlow.Domain.IA;
+using GoalFlow.Infrastructure.IA;
 using GoalFlow.Infrastructure.Persistencia;
 using GoalFlow.Tests.Isolation;
 using GoalFlow.Tests.Mensajeria;
@@ -233,17 +234,24 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
         Assert.StartsWith("Equipo Uno 1-0 Equipo Dos. Goles de Equipo Uno: Jugador Uno.", borrador.Texto);
     }
 
-    // ---- T-15 (R-21 b a e, h) ----
+    // ---- T-15 (R-21 b a f, h): un caso por fila de la tabla de ADR-12 §2.6 (Spec 007 v3, ADR-12 C-23) ----
 
     [Theory]
     [InlineData("json inválido")]
     [InlineData("max_tokens")]
     [InlineData("refusal")]
-    [InlineData("429")]
-    [InlineData("500")]
     [InlineData("400")]
+    [InlineData("404")]
+    [InlineData("413")]
     [InlineData("401")]
-    public async Task T15_cada_resultado_cierto_se_concilia_y_se_resuelve_como_dice_R21(string caso)
+    [InlineData("402")]
+    [InlineData("409")]
+    [InlineData("429")]
+    [InlineData("500 api_error")]
+    [InlineData("500 timeout_error")]
+    [InlineData("504")]
+    [InlineData("418")]
+    public async Task T15_cada_desenlace_del_proveedor_se_resuelve_como_dice_la_tabla_de_R21(string caso)
     {
         await using var host = AnfitrionDeIa.Construir(db);
         var p = await PartidoSembrado.CrearAsync(db, LigaA);
@@ -253,25 +261,32 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
             "json inválido" => Task.FromResult(new RespuestaGenerada("esto no es JSON", "end_turn", 2_000, 400)),
             "max_tokens" => Task.FromResult(Respuesta("max_tokens", salida: 600)),
             "refusal" => Task.FromResult(Respuesta("refusal", salida: 0)),
-            "429" => throw new RespuestaConErrorException(429, null),
-            "500" => throw new RespuestaConErrorException(500, null),
             "400" => throw new RespuestaConErrorException(400, null),
+            "404" => throw new RespuestaConErrorException(404, null, tipoDeError: "not_found_error"),
+            "413" => throw new RespuestaConErrorException(413, null, tipoDeError: "request_too_large"),
             "401" => throw new RespuestaConErrorException(401, null),
+            "402" => throw new RespuestaConErrorException(402, null, tipoDeError: "billing_error"),
+            "409" => throw new RespuestaConErrorException(409, null, tipoDeError: "conflict_error"),
+            "429" => throw new RespuestaConErrorException(429, null),
+            "500 api_error" => throw new RespuestaConErrorException(500, null, tipoDeError: "api_error"),
+            "500 timeout_error" => throw new RespuestaConErrorException(500, null, tipoDeError: "timeout_error"),
+            "504" => throw new RespuestaConErrorException(504, null, tipoDeError: "timeout_error"),
+            "418" => throw new RespuestaConErrorException(418, null),
             _ => throw new InvalidOperationException(caso),
         };
 
         switch (caso)
         {
-            case "json inválido" or "max_tokens" or "429" or "500":
+            case "json inválido" or "max_tokens" or "409" or "429" or "500 api_error" or "500 timeout_error" or "504" or "418":
                 await Assert.ThrowsAsync<FalloReintentableException>(() => host.ProcesarAsync(p, 1));
                 Assert.Equal(0, await host.Resumenes(p));
                 break;
-            case "401":
+            case "401" or "402":
                 var permanente = await Assert.ThrowsAsync<FalloPermanenteException>(() => host.ProcesarAsync(p, 1));
-                Assert.Equal("credencial_invalida", permanente.CodigoDeRazon);
+                Assert.Equal(caso == "401" ? "credencial_invalida" : "facturacion_del_proveedor", permanente.CodigoDeRazon);
                 Assert.Equal(0, await host.Resumenes(p));
                 break;
-            default: // refusal y 400 completan con un borrador
+            default: // refusal, 400, 404 y 413 completan con un borrador
                 await host.ProcesarAsync(p, 1);
                 var borrador = Assert.Single(await host.ResumenesDe(p));
                 Assert.Equal(("Plantilla", "Borrador", caso == "refusal" ? "rechazo_del_modelo" : "solicitud_invalida"),
@@ -279,8 +294,18 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
                 break;
         }
 
-        // La llamada queda conciliada con el uso reportado, o con 0 si no se reportó ninguno, y no queda nada reservado.
+        // (f) Un resultado incierto (504, un timeout_error del servidor o un estado desconocido): no se escribe nada en la llamada ni
+        // en el contador; la reserva sigue contada porque pudo cobrarse.
         var llamada = Assert.Single(await host.LlamadasDe(p));
+        if (caso is "500 timeout_error" or "504" or "418")
+        {
+            Assert.Equal((1, "Reservada", 525L, null, null, null, null),
+                (llamada.Numero, llamada.Estado, llamada.Reserva, llamada.Entrada, llamada.Salida, llamada.Costo, llamada.Resultado));
+            Assert.Equal((525L, 0L), await host.Contador(LigaA, host.MesActual));
+            return;
+        }
+
+        // La llamada queda conciliada con el uso reportado, o con 0 si no se reportó ninguno, y no queda nada reservado.
         Assert.Equal("Conciliada", llamada.Estado);
         var (entradaEsperada, salidaEsperada) = caso switch
         {
@@ -296,10 +321,13 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
 
     private static readonly PreciosDeIa Iniciales = new(100_000, 500_000, 10, 50, 600);
 
+    // Un conteo fallido (R-21, última frase): 429, sin respuesta ("incierto"), 500 y ahora 504 son reintentables; 400 completa con un borrador.
+    // El 402 y el 401 son permanentes y tienen su propia prueba.
     [Theory]
     [InlineData("429", true)]
     [InlineData("incierto", true)]
     [InlineData("500", true)]
+    [InlineData("504", true)]
     [InlineData("400", false)]
     public async Task T15_un_conteo_fallido_no_reserva_nada_y_se_clasifica_como_R21(string caso, bool reintentable)
     {
@@ -310,6 +338,7 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
         {
             "429" => throw new RespuestaConErrorException(429, null),
             "500" => throw new RespuestaConErrorException(500, null),
+            "504" => throw new RespuestaConErrorException(504, null, tipoDeError: "timeout_error"),
             "400" => throw new RespuestaConErrorException(400, null),
             _ => throw new ResultadoInciertoException(),
         };
@@ -335,6 +364,91 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
 
         Assert.Equal("credencial_invalida", permanente.CodigoDeRazon);
         Assert.Equal(0, await host.Llamadas(p));
+    }
+
+    // Spec 007 v3 R-21 (e2): el 402 (facturación) es un fallo permanente con su propio código de razón, también al contar; contar no reserva nada.
+    [Fact]
+    public async Task T15_un_conteo_con_402_es_un_fallo_permanente_de_facturacion_sin_reservar()
+    {
+        await using var host = AnfitrionDeIa.Construir(db);
+        var p = await PartidoSembrado.CrearAsync(db, LigaA);
+        await p.GuardarAsync(PlanillaSembrada.ConGoleador());
+        host.Control.AlContar = _ => throw new RespuestaConErrorException(402, null, tipoDeError: "billing_error");
+
+        var permanente = await Assert.ThrowsAsync<FalloPermanenteException>(() => host.ProcesarAsync(p, 1));
+
+        Assert.Equal("facturacion_del_proveedor", permanente.CodigoDeRazon);
+        Assert.Equal(0, host.Control.Generaciones);
+        Assert.Equal(0, await host.Llamadas(p));
+        Assert.Equal(0, await host.Contadores(LigaA, host.MesActual));
+        Assert.Equal(0, await host.Resumenes(p));
+    }
+
+    [Fact]
+    public async Task T15_el_402_registra_un_error_sin_el_mensaje_del_proveedor_ni_el_de_la_excepcion()
+    {
+        var registros = new CapturaDeRegistros();
+        await using var host = AnfitrionDeIa.Construir(db, registros: registros);
+        var p = await PartidoSembrado.CrearAsync(db, LigaA);
+        await p.GuardarAsync(PlanillaSembrada.ConGoleador());
+        host.Control.AlGenerar = _ => throw new RespuestaConErrorException(402, null, "MARCA-402-MENSAJE", "billing_error");
+
+        var permanente = await Assert.ThrowsAsync<FalloPermanenteException>(() => host.ProcesarAsync(p, 1));
+
+        Assert.Equal("facturacion_del_proveedor", permanente.CodigoDeRazon);
+        var error = Assert.Single(registros.Entradas, e => e.Nivel == LogLevel.Error && e.Categoria.Contains("ConsumidorDeResumenDePartido"));
+        Assert.Contains("facturacion_del_proveedor", error.Texto);
+        Assert.DoesNotContain("MARCA-402", string.Join('\n', registros.Entradas.Select(e => e.Texto)));
+        var llamada = Assert.Single(await host.LlamadasDe(p));
+        Assert.Equal(("Conciliada", 0, 0), (llamada.Estado, llamada.Entrada, llamada.Salida)); // el 402 se concilia en 0 (R-21 e2)
+    }
+
+    // ---- T-22 (R-27, R-28): el mensaje de error del proveedor jamás llega a un registro ni al fallo del consumidor ----
+
+    [Theory]
+    [InlineData(400, "invalid_request_error")]
+    [InlineData(401, "authentication_error")]
+    [InlineData(402, "billing_error")]
+    [InlineData(429, "rate_limit_error")]
+    [InlineData(500, "api_error")]
+    [InlineData(504, "timeout_error")]
+    [InlineData(418, "tipo_nuevo_del_futuro")]
+    public async Task T22_con_el_adaptador_real_el_mensaje_de_error_del_proveedor_no_llega_a_ningun_registro_y_el_estado_y_el_tipo_si(
+        int estado, string tipo)
+    {
+        const string marca = "MENSAJE-DEL-PROVEEDOR-MARCA-9";
+        const string clave = "clave-falsa-MARCA-K-3";
+        var cuerpo = $$"""{"type":"error","error":{"type":"{{tipo}}","message":"{{marca}}"},"request_id":"req_1"}""";
+        var adaptador = new AdaptadorAnthropic(
+            new HttpClient(new ManejadorDePrueba((_, _) => ManejadorDePrueba.Json((System.Net.HttpStatusCode)estado, cuerpo)))
+            {
+                BaseAddress = new Uri("https://api.anthropic.invalid"), Timeout = Timeout.InfiniteTimeSpan,
+            },
+            new OpcionesDeIA { Habilitada = true, ClaveApi = clave, Modelo = "claude-haiku-5-5" });
+        var registros = new CapturaDeRegistros();
+        await using var host = AnfitrionDeIa.Construir(db, registros: registros);
+        var p = await PartidoSembrado.CrearAsync(db, LigaA);
+        await p.GuardarAsync(PlanillaSembrada.ConGoleador());
+        var solicitud = new SolicitudDeGeneracion(InstruccionesDeResumen.TextoDeSistema, "{}", 600, RazonamientoDeIA.Deshabilitado);
+        host.Control.AlGenerar = _ => adaptador.GenerarAsync(solicitud, default);
+
+        Exception? fallo = null;
+        try
+        {
+            await host.ProcesarAsync(p, 1);
+        }
+        catch (Exception ex) when (ex is FalloReintentableException or FalloPermanenteException)
+        {
+            fallo = ex;
+        }
+
+        var todo = string.Join('\n', registros.Entradas.Select(e => e.Texto)) + "\n" + fallo;
+        Assert.DoesNotContain("MENSAJE-DEL-PROVEEDOR", todo);
+        Assert.DoesNotContain(clave, todo);
+        // Lo que sí debe aparecer: el estado HTTP y, si es uno de los tipos documentados, su error.type (R-27).
+        var esperado = TiposDeErrorDelProveedor.Documentados.Contains(tipo) ? $"http_{estado}_{tipo}" : $"http_{estado}";
+        Assert.Contains(esperado, todo);
+        Assert.DoesNotContain("tipo_nuevo_del_futuro", todo); // un tipo no documentado nunca se propaga
     }
 
     // ---- R-21 (b): la salida inválida es reintentable y la siguiente llamada lleva el número siguiente ----

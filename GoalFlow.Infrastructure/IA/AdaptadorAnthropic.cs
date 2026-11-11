@@ -24,7 +24,7 @@ public sealed class AdaptadorAnthropic(HttpClient http, OpcionesDeIA opciones) :
         // Los mismos miembros que la generación, menos max_tokens: el endpoint de conteo no lo define (R-12 lista modelo, sistema,
         // mensaje, formato de salida y razonamiento). Ver el registro del paso 0 en la descripción del PR.
         var (estado, cuerpo) = await EnviarAsync(RutaDeConteo, CuerpoDe(solicitud, conMaxTokens: false), cancellationToken);
-        if (estado is < 200 or > 299) throw new RespuestaConErrorException(estado, UsoDeError(cuerpo));
+        if (estado is < 200 or > 299) throw ErrorDeRespuesta(estado, cuerpo);
 
         try
         {
@@ -43,7 +43,7 @@ public sealed class AdaptadorAnthropic(HttpClient http, OpcionesDeIA opciones) :
     public async Task<RespuestaGenerada> GenerarAsync(SolicitudDeGeneracion solicitud, CancellationToken cancellationToken)
     {
         var (estado, cuerpo) = await EnviarAsync(RutaDeMensajes, CuerpoDe(solicitud, conMaxTokens: true), cancellationToken);
-        if (estado is < 200 or > 299) throw new RespuestaConErrorException(estado, UsoDeError(cuerpo));
+        if (estado is < 200 or > 299) throw ErrorDeRespuesta(estado, cuerpo);
 
         UsoReportado? uso = null;
         try
@@ -129,17 +129,30 @@ public sealed class AdaptadorAnthropic(HttpClient http, OpcionesDeIA opciones) :
         return null;
     }
 
-    // Un cuerpo de error rara vez trae uso; si lo trae se conserva para conciliar (R-21 c). Nunca se copia su mensaje.
-    private static UsoReportado? UsoDeError(string cuerpo)
+    // Un cuerpo de error rara vez trae uso; si lo trae se conserva para conciliar (R-21 c). Del cuerpo se lee SOLO error.type, y solo si es uno
+    // de los valores documentados (ADR-12 hecho 9); cualquier otra cosa, o un cuerpo que no se puede interpretar, es «desconocido» (R-28).
+    // NUNCA se lee, se copia ni se registra error.message: la clasificación es por estado y tipo, jamás por el mensaje (C-23).
+    private static RespuestaConErrorException ErrorDeRespuesta(int estado, string cuerpo)
     {
+        UsoReportado? uso = null;
+        string? tipo = null;
         try
         {
             using var json = JsonDocument.Parse(cuerpo);
-            return json.RootElement.ValueKind == JsonValueKind.Object ? LeerUso(json.RootElement) : null;
+            var raiz = json.RootElement;
+            if (raiz.ValueKind == JsonValueKind.Object)
+            {
+                uso = LeerUso(raiz);
+                if (raiz.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object
+                    && error.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String)
+                    tipo = t.GetString();
+            }
         }
         catch (JsonException)
         {
-            return null;
+            // un cuerpo no interpretable: sin uso y con tipo desconocido
         }
+
+        return new RespuestaConErrorException(estado, uso, tipoDeError: tipo);
     }
 }

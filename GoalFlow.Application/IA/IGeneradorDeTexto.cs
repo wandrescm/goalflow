@@ -26,13 +26,49 @@ public interface IGeneradorDeTexto
     Task<RespuestaGenerada> GenerarAsync(SolicitudDeGeneracion solicitud, CancellationToken cancellationToken);
 }
 
-/// <summary>El proveedor respondió con un estado de error. Lleva el uso reportado, si lo hubo.</summary>
-public class RespuestaConErrorException(int estado, UsoReportado? uso, string? mensaje = null)
+/// <summary>
+/// Los valores documentados de <c>error.type</c> del proveedor (ADR-12 hecho 9, leído el 2026-11-11). Solo estos se aceptan; cualquier otro
+/// valor, o su ausencia, es <see cref="Desconocido"/>. La lista puede crecer con el tiempo: crecer es una decisión de la Spec, no del código.
+/// </summary>
+public static class TiposDeErrorDelProveedor
+{
+    public const string Desconocido = "desconocido";
+    public const string SolicitudInvalida = "invalid_request_error";
+    public const string Autenticacion = "authentication_error";
+    public const string Facturacion = "billing_error";
+    public const string Permisos = "permission_error";
+    public const string NoEncontrado = "not_found_error";
+    public const string Conflicto = "conflict_error";
+    public const string SolicitudDemasiadoGrande = "request_too_large";
+    public const string LimiteDeFrecuencia = "rate_limit_error";
+    public const string ErrorDeApi = "api_error";
+    public const string TiempoAgotado = "timeout_error";
+    public const string Sobrecargado = "overloaded_error";
+
+    public static IReadOnlySet<string> Documentados { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        SolicitudInvalida, Autenticacion, Facturacion, Permisos, NoEncontrado, Conflicto, SolicitudDemasiadoGrande,
+        LimiteDeFrecuencia, ErrorDeApi, TiempoAgotado, Sobrecargado,
+    };
+
+    /// <summary>El tipo documentado tal cual, o <see cref="Desconocido"/>. Comparación exacta, sin mayúsculas ni espacios tolerados.</summary>
+    public static string Normalizar(string? tipo) => tipo is not null && Documentados.Contains(tipo) ? tipo : Desconocido;
+}
+
+/// <summary>
+/// El proveedor respondió con un estado de error. Lleva el estado HTTP, el <c>error.type</c> documentado (o <c>desconocido</c>) y el uso
+/// reportado, si lo hubo. <b>Nunca</b> lleva el mensaje de error del proveedor (R-28): el parámetro <paramref name="mensaje"/> es solo para
+/// textos propios y el adaptador no lo usa.
+/// </summary>
+public class RespuestaConErrorException(int estado, UsoReportado? uso, string? mensaje = null, string? tipoDeError = null)
     : Exception(mensaje ?? "El proveedor respondió con un error.")
 {
     public int Estado { get; } = estado;
 
     public UsoReportado? Uso { get; } = uso;
+
+    /// <summary>Uno de <see cref="TiposDeErrorDelProveedor.Documentados"/>, o <see cref="TiposDeErrorDelProveedor.Desconocido"/>.</summary>
+    public string TipoDeError { get; } = TiposDeErrorDelProveedor.Normalizar(tipoDeError);
 }
 
 /// <summary>No hubo respuesta: tiempo agotado, conexión perdida o una excepción sin respuesta. Pudo cobrarse (R-21 f).</summary>

@@ -156,15 +156,19 @@ public sealed class ConsumidorDeResumenDePartido(
         }
         catch (RespuestaConErrorException ex)
         {
-            // Contar es gratis: no hay nada que conciliar (R-21, última frase).
-            if (ex.Estado is 400 or 404 or 413)
+            // Contar es gratis: no hay nada que conciliar ni reservado (R-21, última frase). Se clasifica como al generar, por estado y tipo.
+            switch (ClasificadorDeErrorDelProveedor.Clasificar(ex))
             {
-                await GuardarBorradorAsync(caso, MotivoDeBorrador.SolicitudInvalida, null, cancellationToken);
-                return;
+                case DesenlaceDeError.BorradorPorSolicitudInvalida:
+                    await GuardarBorradorAsync(caso, MotivoDeBorrador.SolicitudInvalida, null, cancellationToken);
+                    return;
+                case DesenlaceDeError.CredencialInvalida:
+                    throw Permanente(caso, ClasificadorDeErrorDelProveedor.CodigoDeCredencialInvalida, ex);
+                case DesenlaceDeError.FacturacionDelProveedor:
+                    throw Permanente(caso, ClasificadorDeErrorDelProveedor.CodigoDeFacturacionDelProveedor, ex);
+                default: // (c) y (f): reintentable, sin nada que escribir
+                    throw ReintentableConRegistro(caso, $"conteo_{ClasificadorDeErrorDelProveedor.CodigoDeResultado(ex)}", ex);
             }
-
-            if (ex.Estado is 401 or 403) throw PermanenteDeCredencial(caso, ex);
-            throw ReintentableConRegistro(caso, $"conteo_http_{ex.Estado}", ex);
         }
         catch (Exception ex)
         {
@@ -295,24 +299,32 @@ public sealed class ConsumidorDeResumenDePartido(
         Registrar(caso, ClasificacionDeResumen.Narrativa, nuevo ? "resumen_del_modelo" : "resumen_ya_guardado", numero, uso);
     }
 
+    // R-21 (ADR-12 §2.6): se clasifica por el estado HTTP y el error.type documentado, nunca por el mensaje.
     private async Task ResolverErrorDeRespuestaAsync(
         Caso caso, Guid llamadaId, int numero, RespuestaConErrorException error, CancellationToken cancellationToken)
     {
-        var codigo = $"http_{error.Estado}";
-        switch (error.Estado)
+        var codigo = ClasificadorDeErrorDelProveedor.CodigoDeResultado(error);
+        switch (ClasificadorDeErrorDelProveedor.Clasificar(error))
         {
-            case 400 or 404 or 413: // (d) nuestra solicitud está mal: se concilia y se guarda el borrador
+            case DesenlaceDeError.BorradorPorSolicitudInvalida: // (d) nuestra solicitud está mal: se concilia y se guarda el borrador
                 await GuardarBorradorAsync(
                     caso, MotivoDeBorrador.SolicitudInvalida,
                     () => ConciliarEnTransaccionAsync(caso, llamadaId, numero, error.Uso, codigo, cancellationToken),
                     cancellationToken);
                 return;
 
-            case 401 or 403: // (e) credenciales: se concilia en 0 y el fallo es permanente
+            case DesenlaceDeError.CredencialInvalida: // (e) credenciales: se concilia en 0 y el fallo es permanente
                 await ConciliarAsync(caso, llamadaId, numero, null, codigo, cancellationToken);
-                throw PermanenteDeCredencial(caso, error);
+                throw Permanente(caso, ClasificadorDeErrorDelProveedor.CodigoDeCredencialInvalida, error);
 
-            default: // (c) 429, 5xx y cualquier otro estado con respuesta: se concilia y se reintenta
+            case DesenlaceDeError.FacturacionDelProveedor: // (e2) facturación: se concilia en 0 y el fallo es permanente
+                await ConciliarAsync(caso, llamadaId, numero, null, codigo, cancellationToken);
+                throw Permanente(caso, ClasificadorDeErrorDelProveedor.CodigoDeFacturacionDelProveedor, error);
+
+            case DesenlaceDeError.Incierto: // (f) 504, timeout_error o un estado desconocido: NO se escribe nada, tampoco habiendo respuesta
+                throw ReintentableConRegistro(caso, codigo, error, numero);
+
+            default: // (c) 409, 429, 529, 500 (no timeout_error) y otro 5xx salvo 504: se concilia y se reintenta
                 await ConciliarAsync(caso, llamadaId, numero, error.Uso, codigo, cancellationToken);
                 throw ReintentableConRegistro(caso, codigo, error, numero);
         }
@@ -400,12 +412,13 @@ public sealed class ConsumidorDeResumenDePartido(
     private static bool EsDeApagado(Exception ex, CancellationToken cancellationToken) =>
         ex is OperationCanceledException && cancellationToken.IsCancellationRequested;
 
-    private FalloPermanenteException PermanenteDeCredencial(Caso caso, Exception interna)
+    // Un fallo permanente de Mensajería con un código de razón estable. El registro lleva el código, nunca el mensaje del proveedor (R-27).
+    private FalloPermanenteException Permanente(Caso caso, string codigoDeRazon, Exception interna)
     {
         logger.LogError(
-            "A-01 credencial inválida: tenant {Tenant}, partido {Partido}, versión {Version}, resultado {Resultado}.",
-            caso.Tenant.Value, caso.PartidoId, caso.Version, "credencial_invalida");
-        return new FalloPermanenteException("credencial_invalida", interna);
+            "A-01 fallo permanente: tenant {Tenant}, partido {Partido}, versión {Version}, resultado {Resultado}.",
+            caso.Tenant.Value, caso.PartidoId, caso.Version, codigoDeRazon);
+        return new FalloPermanenteException(codigoDeRazon, interna);
     }
 
     private FalloReintentableException ReintentableConRegistro(Caso caso, string codigo, Exception? interna, int? numero = null)

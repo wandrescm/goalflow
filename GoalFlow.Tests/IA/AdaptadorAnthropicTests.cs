@@ -210,6 +210,120 @@ public class AdaptadorAnthropicTests
         Assert.Equal(new UsoReportado(77, 3), error.Uso);
     }
 
+    // ---- Spec 007 v3 R-21, R-28 (ADR-12 §2.6, C-23): el error.type documentado se lee; el mensaje del proveedor nunca ----
+
+    private const string MensajeDelProveedor = "MENSAJE-DEL-PROVEEDOR-MARCA-9";
+
+    private static string CuerpoDeError(string? tipo, string mensaje = MensajeDelProveedor) =>
+        $$"""{"type":"error","error":{"type":{{(tipo is null ? "null" : JsonSerializer.Serialize(tipo))}},"message":{{JsonSerializer.Serialize(mensaje)}}},"request_id":"req_1"}""";
+
+    [Theory]
+    [InlineData("invalid_request_error")]
+    [InlineData("authentication_error")]
+    [InlineData("billing_error")]
+    [InlineData("permission_error")]
+    [InlineData("not_found_error")]
+    [InlineData("conflict_error")]
+    [InlineData("request_too_large")]
+    [InlineData("rate_limit_error")]
+    [InlineData("api_error")]
+    [InlineData("timeout_error")]
+    [InlineData("overloaded_error")]
+    public async Task T22_cada_error_type_documentado_se_lee_del_cuerpo_de_error_en_la_generacion_y_en_el_conteo(string tipo)
+    {
+        var adaptador = Crear(Respondiendo((HttpStatusCode)500, CuerpoDeError(tipo)));
+
+        var deGeneracion = await Assert.ThrowsAsync<RespuestaConErrorException>(() => adaptador.GenerarAsync(Solicitud, default));
+        var deConteo = await Assert.ThrowsAsync<RespuestaConErrorException>(() => adaptador.ContarAsync(Solicitud, default));
+
+        Assert.Equal(tipo, deGeneracion.TipoDeError);
+        Assert.Equal(tipo, deConteo.TipoDeError);
+        Assert.Equal(500, deGeneracion.Estado); // el estado sigue siendo el HTTP; el tipo no lo reemplaza
+    }
+
+    [Fact]
+    public void T22_los_valores_documentados_de_error_type_son_exactamente_los_del_ADR_12_hecho_9()
+    {
+        Assert.Equal(
+            ["api_error", "authentication_error", "billing_error", "conflict_error", "invalid_request_error", "not_found_error",
+             "overloaded_error", "permission_error", "rate_limit_error", "request_too_large", "timeout_error"],
+            TiposDeErrorDelProveedor.Documentados.Order(StringComparer.Ordinal));
+        Assert.Equal("desconocido", TiposDeErrorDelProveedor.Desconocido);
+    }
+
+    [Theory]
+    [InlineData("tipo_nuevo_del_futuro")]      // un valor que la documentación aún no lista: los valores pueden crecer
+    [InlineData("RATE_LIMIT_ERROR")]            // la comparación es exacta
+    [InlineData(" rate_limit_error")]
+    [InlineData("rate_limit_error ")]
+    [InlineData("")]
+    [InlineData(MensajeDelProveedor)]           // un «tipo» que en realidad es texto libre nunca se propaga
+    public async Task T22_un_error_type_desconocido_se_convierte_en_desconocido(string tipo)
+    {
+        var adaptador = Crear(Respondiendo((HttpStatusCode)429, CuerpoDeError(tipo)));
+
+        var deGeneracion = await Assert.ThrowsAsync<RespuestaConErrorException>(() => adaptador.GenerarAsync(Solicitud, default));
+        var deConteo = await Assert.ThrowsAsync<RespuestaConErrorException>(() => adaptador.ContarAsync(Solicitud, default));
+
+        Assert.Equal("desconocido", deGeneracion.TipoDeError);
+        Assert.Equal("desconocido", deConteo.TipoDeError);
+        Assert.Equal(429, deGeneracion.Estado);
+    }
+
+    [Theory]
+    [InlineData("""{"type":"error","error":{"message":"x"}}""")]            // sin error.type
+    [InlineData("""{"type":"error","error":{"type":null,"message":"x"}}""")]
+    [InlineData("""{"type":"error","error":{"type":123,"message":"x"}}""")]  // no es una cadena
+    [InlineData("""{"type":"error","error":{"type":["api_error"]}}""")]
+    [InlineData("""{"type":"error"}""")]                                      // sin objeto error
+    [InlineData("""{"type":"error","error":"api_error"}""")]                  // error no es un objeto
+    [InlineData("""["api_error"]""")]                                         // la raíz no es un objeto
+    [InlineData("<html>502 Bad Gateway</html>")]                              // no es JSON
+    [InlineData("")]                                                          // cuerpo vacío
+    public async Task T22_un_cuerpo_de_error_sin_tipo_utilizable_o_no_interpretable_da_desconocido(string cuerpo)
+    {
+        var adaptador = Crear(Respondiendo((HttpStatusCode)500, cuerpo));
+
+        var deGeneracion = await Assert.ThrowsAsync<RespuestaConErrorException>(() => adaptador.GenerarAsync(Solicitud, default));
+        var deConteo = await Assert.ThrowsAsync<RespuestaConErrorException>(() => adaptador.ContarAsync(Solicitud, default));
+
+        Assert.Equal(("desconocido", 500), (deGeneracion.TipoDeError, deGeneracion.Estado));
+        Assert.Equal(("desconocido", 500), (deConteo.TipoDeError, deConteo.Estado));
+        Assert.Null(deGeneracion.Uso);
+    }
+
+    [Theory]
+    [InlineData(400, "invalid_request_error")]
+    [InlineData(401, "authentication_error")]
+    [InlineData(402, "billing_error")]
+    [InlineData(429, "rate_limit_error")]
+    [InlineData(500, "api_error")]
+    [InlineData(504, "timeout_error")]
+    [InlineData(418, "tipo_nuevo_del_futuro")]
+    public async Task T22_el_mensaje_de_error_del_proveedor_nunca_llega_a_la_excepcion_ni_a_sus_propiedades(int estado, string tipo)
+    {
+        var adaptador = Crear(Respondiendo((HttpStatusCode)estado, CuerpoDeError(tipo)));
+
+        var errores = new[]
+        {
+            await Assert.ThrowsAsync<RespuestaConErrorException>(() => adaptador.GenerarAsync(Solicitud, default)),
+            await Assert.ThrowsAsync<RespuestaConErrorException>(() => adaptador.ContarAsync(Solicitud, default)),
+        };
+
+        foreach (var error in errores)
+        {
+            // Todo lo que la excepción expone: su texto, la cadena completa, sus datos, la interna y cada propiedad pública.
+            var visible = new List<string?> { error.Message, error.ToString(), error.StackTrace, error.Source, error.HelpLink };
+            visible.AddRange(error.Data.Values.Cast<object?>().Select(v => v?.ToString()));
+            foreach (var propiedad in error.GetType().GetProperties())
+                visible.Add(Convert.ToString(propiedad.GetValue(error), System.Globalization.CultureInfo.InvariantCulture));
+
+            Assert.Null(error.InnerException);
+            Assert.DoesNotContain(visible, v => v is not null && v.Contains("MENSAJE-DEL-PROVEEDOR"));
+            Assert.DoesNotContain(visible, v => v is not null && v.Contains(Clave));
+        }
+    }
+
     [Fact]
     public async Task T22_un_tiempo_agotado_o_una_conexion_perdida_son_un_resultado_incierto()
     {
