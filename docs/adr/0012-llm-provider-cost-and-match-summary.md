@@ -1,6 +1,6 @@
 # ADR-12: LLM provider, cost ceiling and the A-01 generation policy
 
-- **Status:** Accepted (2026-11-11, S6D1, H13), by the owner after revision v2 and the two editorial adjustments to Spec 007, with the documented risks accepted: the reservation's input part is an estimate (C-20), and renames are not regenerated (O-01). History: v1 built from the owner's decisions of 2026-11-11 (P-09 and design challenges 1 to 5); v2 after the owner's review the same day (O-01 to O-04, C-03, C-08 and C-09 decided; corrections C-15 to C-22; three integration checks against the official documentation). **Operational enablement is still pending:** `IA:Habilitada` stays false until the owner confirms the account, the prepaid balance and that automatic reload is off (C-01).
+- **Status:** Accepted (2026-11-11, S6D1, H13), by the owner after revision v2 and the two editorial adjustments to Spec 007, with the documented risks accepted: the reservation's input part is an estimate (C-20), and renames are not regenerated (O-01). History: v1 built from the owner's decisions of 2026-11-11 (P-09 and design challenges 1 to 5); v2 after the owner's review the same day (O-01 to O-04, C-03, C-08 and C-09 decided; corrections C-15 to C-22; three integration checks against the official documentation). **Operational enablement is still pending:** `IA:Habilitada` stays false until the owner confirms the account, the prepaid balance and that automatic reload is off (C-01). **Amended on 2026-11-11 after Phase A of H14 (v3, accepted by the owner the same day): the provider error policy of §2.6 (C-23) and the punctuation of the administrative template (C-24); the own-goal format is documented (C-25). No change of design.**
 - **Date:** 2026-11-11
 - **Related:** ADR-02 (post-save pipeline; amended §2.3 and §2.10 with this ADR; closes C-08 and C-09), ADR-03 (module `IA`), ADR-05 (secrets and hosting), ADR-14 (multi-tenancy; §2.3 amended in wording only, C-14), Spec 004 (additive: targeted publication), Spec 005 (R-18 renames; R-34 exact sets), Spec 006 (C-14, C-17, §7.1), Spec 007
 
@@ -18,7 +18,16 @@ Facts that shape the decision:
 6. **The prompt contains personal data and untrusted text.** Player and team names are personal data (Ley 1581) and are typed by an Admin in the import; they may contain anything that fits the name rules of Spec 005 R-12, including text that reads like instructions. The sheet itself carries no free text (Spec 006 C-14).
 7. **Names change without a new match version.** The import updates team, player and tournament names (Spec 005 R-18) without touching `partidos.version` and without publishing an event.
 8. **Token accounting (official documentation, read on 2026-11-11).** The token-counting endpoint is free (with its own rate limit), accepts the same inputs as a message and returns the input tokens. Its count is documented as an **estimate** that may differ by a small amount from the input actually used, and it may include tokens the provider adds for itself, which are not billed. `max_tokens` is a hard limit on the output; on Claude Haiku 5.5 thinking tokens count toward it and are billed as output. Adaptive thinking is on by default on this model and can be disabled with `thinking: {"type": "disabled"}`. Structured JSON output is requested with `output_config.format` (generally available; no beta header). A response can begin with a thinking block, and safety classifiers can end it with `stop_reason: "refusal"`. The model's newer tokenizer counts the same text as about 30 % more tokens than Claude Haiku 4.5. Failed requests are not billed, but interrupted or timed-out requests may be (Help Center, verified by the owner).
-9. **Current production state.** Production has zero leagues. The Anthropic account and its balance are not yet confirmed by the owner, so P-09 is decided but not operationally enabled.
+9. **Error reference (official documentation, read on 2026-11-11 after Phase A).**
+   - `400 invalid_request_error`: a malformed request. The API **also** returns 400 when an organization or workspace spend limit is reached, and the same type may be used for other 4xx statuses not listed. Independent reports say an exhausted prepaid balance also comes back as 400.
+   - `401 authentication_error`, `402 billing_error` (billing or payment information), `403 permission_error`, `404 not_found_error`.
+   - `409 conflict_error`: resolve the conflict, then retry.
+   - `413 request_too_large`.
+   - `429 rate_limit_error`: a rate limit, or the usage tier's monthly spend cap. The spend-cap 429 has no `retry-after` header and keeps failing until access resumes.
+   - `500 api_error`: retry with backoff. A 500 can carry the type `timeout_error` when the request reached the server's time limit before the response started.
+   - `504 timeout_error`, `529 overloaded_error`.
+   - Errors are JSON with `error.type` and `error.message`. The `type` values may grow over time.
+10. **Current production state.** Production has zero leagues. The Anthropic account and its balance are not yet confirmed by the owner, so P-09 is decided but not operationally enabled.
 
 ## 2. Decision
 
@@ -80,15 +89,20 @@ A-01 classifies the current sheet into exactly one of three outcomes (owner's de
 
 No in-memory retries and **no Polly** (closes ADR-02 C-08, C-10). Durable retries already exist in the outbox. In-memory retries would multiply billed calls inside one attempt and hide uncertain calls from the budget ledger. Timeouts are nested and validated at startup: HTTP timeout (`IA:TimeoutDeLlamada`, 60 s) < consumer timeout (`Mensajeria:TimeoutDelConsumidor`, 2 min) < lease (5 min).
 
+Outcomes are classified by the HTTP status and, where the documentation defines it, by `error.type`, **never by the message** (C-23). A received response is a certain outcome, except a timeout reported by the server, which is treated as uncertain because the provider may bill a timed-out request (fact 8, C-15).
+
 | Provider outcome | Certain? | Ledger | Delivery |
 | --- | --- | --- | --- |
 | Success and valid output | Yes | Reconciled with the reported usage | Summary stored; completes |
 | Success but invalid output (not the schema, truncated by `max_tokens`, out of length bounds, control characters) | Yes | Reconciled | Retryable failure; the next attempt makes the next numbered call (§2.5) |
 | Success with `stop_reason` `refusal` | Yes | Reconciled | Draft with reason `rechazo_del_modelo`; completes |
-| `429`, `500`, `529` or another `5xx` | Yes | Reconciled with the usage reported, or 0 if none | Retryable failure |
-| `400`, `404`, `413` (our request is wrong) | Yes | Reconciled (0 if no usage) | Draft with reason `solicitud_invalida`; completes |
-| `401`, `403` (credentials) | Yes | Reconciled (0) | Permanent failure `credencial_invalida` (`Fallida`, visible in SQL) |
-| Timeout, connection lost, crash, shutdown | **No** | Stays `Reservada` | Retryable failure (crash and shutdown: ADR-02 rules, nothing written) |
+| `400` (malformed request, **or** an account spend limit or exhausted balance, which the API does not tell apart by status), `404`, `413` | Yes | Reconciled with the reported usage, or 0 | Draft with reason `solicitud_invalida`; completes. The reason means "the provider rejected the request"; a burst of them is the signal to check the account's balance and spend limits (C-23) |
+| `401`, `403` (credentials or permissions) | Yes | Reconciled (0) | Permanent failure `credencial_invalida` |
+| `402 billing_error` (billing or payment information) | Yes | Reconciled (0) | Permanent failure `facturacion_del_proveedor` |
+| `409 conflict_error`, `429`, `500` with a type other than `timeout_error`, `529`, any other `5xx` other than `504` | Yes | Reconciled with the reported usage, or 0 | Retryable failure. A spend-cap `429` keeps failing until the attempts run out and the delivery ends `Fallida`, which is accepted |
+| `504`, or any status whose `error.type` is `timeout_error` | **No** | Stays `Reservada` | Retryable failure |
+| Any other status (an unknown `4xx`, `1xx`, `3xx` after redirects, or an unparsable error body with an unlisted status) | **No** | Stays `Reservada` | Retryable failure. Unknown is treated as possibly billed |
+| Timeout, connection lost, crash, shutdown (no response) | **No** | Stays `Reservada` | Retryable failure (crash and shutdown: ADR-02 rules, nothing written) |
 | The counting request fails (any of the cases above) | — | Nothing reserved; counting is free | Same classification as the row that matches, with nothing to reconcile |
 
 - **Draft (`Borrador`).** When the narrative cannot be produced (`presupuesto`, `limite_de_llamadas`, `solicitud_invalida`, `entrada_excedida`, `rechazo_del_modelo`), A-01 stores a deterministic draft: the extended template (score, scorers, own goals with the scorer's team, unattributed goals, cards or "not reported"). It is correct by construction, not published automatically, and it is the course format's "draft for the Admin" (C-11). Its text is capped at `LongitudMaximaDeBorrador` (4,000 characters). When the full extended draft would exceed it, the **compact draft** is stored instead: the result line plus a fixed sentence saying that the detail was omitted for length. Nothing is cut in the middle of an item and nothing is invented (C-19).
@@ -198,6 +212,9 @@ Spec 007 turns this ADR into EARS requirements and tests. The critical ones: the
 - **C-20** *Is the reservation a proven maximum?* No. v1 claimed a byte-based bound that the documentation does not support. v2 counts with the official endpoint, adds a margin, and states the guarantee as it is: output is bounded by contract, input by a documented estimate, and overruns are recorded, measured and fail closed (§2.4). Raised by the owner (review, correction 5).
 - **C-21** *Thinking on or off?* Off by default, and measured in the smoke test (adaptive versus disabled: valid outputs, output tokens, latency and the owner's reading of the texts) before the owner confirms. Raised by the owner (integration check).
 - **C-22** *What happens to existing A-01 deliveries when IA is turned off?* They keep their state and attempts and are not claimed; they are processed when it is on again (§2.1; Spec 007 T-28). Raised by the owner (review, correction 4).
+- **C-23** *How are provider errors classified?* By HTTP status and documented `error.type`, never by message, as in the §2.6 table. Raised by the owner after Phase A (paso 0 interpretations: unlisted statuses; 402; 409; a 400 that means a spend limit). Findings from the official reference (fact 9): a spend limit returns 400, which cannot be told apart from a malformed request without reading the message, so `solicitud_invalida` covers both and is documented as "rejected by the provider". 402 is a billing problem: permanent, `facturacion_del_proveedor`. 409 is retryable. A server-reported timeout and any unknown status keep the reservation, because they may be billed. Layer 1 (the internal ceiling of US$3) stays below the prepaid balance, so in normal operation it cuts before any provider limit. Decided by the owner on 2026-11-11.
+- **C-24** *Why did the administrative template print `W.O..`?* Spec 007 v2 R-11 wrote the template as `…por {m}.` while one value of `m` already ends with a period. A defect of the Spec, not of the implementation; Phase A pinned it in a golden test as written. Spec 007 v3 adds the final period only if the text does not already end with one. Found in Phase A (D-4); corrected by decision of the owner on 2026-11-11.
+- **C-25** *Which own-goal format details were implicit?* The order inside a side's goal list (scorers, then own goals credited to the side, then unattributed goals), the order among own goals, and where a quantity goes. Spec 007 v3 R-11 makes them explicit as implemented in Phase A. Documented by decision of the owner on 2026-11-11; no change of behavior.
 
 ### Decided in the owner's review (2026-11-11)
 
