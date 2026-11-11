@@ -59,6 +59,9 @@ public sealed class EntradaCanonica
     /// <summary>Los bytes UTF-8 del JSON canónico: sin indentación y sin más escapes que los que JSON exige.</summary>
     public byte[] Bytes() => _bytes ??= Encoding.UTF8.GetBytes(ComoJson());
 
+    /// <summary>El JSON canónico como texto: lo que viaja dentro del bloque de datos del mensaje de usuario.</summary>
+    public string Json() => Encoding.UTF8.GetString(Bytes());
+
     /// <summary>El SHA-256 de los bytes, en hexadecimal minúscula de 64 caracteres (R-09).</summary>
     public string Huella() => Convert.ToHexStringLower(SHA256.HashData(Bytes()));
 
