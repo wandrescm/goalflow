@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using GoalFlow.Application.IA;
 using GoalFlow.Domain.Tenancy;
 using GoalFlow.Infrastructure.IA;
@@ -25,8 +26,22 @@ public sealed class HechoConClaveRealAttribute : FactAttribute
     }
 }
 
-/// <summary>Decora al adaptador real y mide cada llamada: tokens contados, uso facturado, stop_reason, validez y latencia (Spec 007 T-21 b).</summary>
-public sealed class GeneradorMedido(IGeneradorDeTexto real, List<string> registro) : IGeneradorDeTexto
+/// <summary>El escenario en curso; lo fija la prueba antes de procesar cada partido.</summary>
+public sealed class ContextoDeMedicion
+{
+    public int Escenario { get; set; }
+
+    public string Modo { get; set; } = "";
+}
+
+/// <summary>Una llamada pagada medida. Nunca lleva la clave, encabezados ni mensajes de excepción del proveedor.</summary>
+public sealed record MedicionDeLlamada(
+    int Escenario, string Modo, int TokensContados, int? TokensEntradaFacturados, int? TokensSalidaFacturados, string? StopReason,
+    bool? SalidaValida, long LatenciaMs, long? CostoMicroUsd, string? ErrorTipo, int? ErrorEstado, string? ErrorTipoProveedor, string? Texto);
+
+/// <summary>Decora al adaptador real y mide cada llamada: tokens contados, uso facturado, stop_reason, validez, latencia y costo (Spec 007 T-21 b).</summary>
+public sealed class GeneradorMedido(
+    IGeneradorDeTexto real, List<MedicionDeLlamada> registro, ContextoDeMedicion contexto, PreciosDeIa precios) : IGeneradorDeTexto
 {
     private int _ultimoConteo;
 
@@ -39,24 +54,42 @@ public sealed class GeneradorMedido(IGeneradorDeTexto real, List<string> registr
     public async Task<RespuestaGenerada> GenerarAsync(SolicitudDeGeneracion solicitud, CancellationToken cancellationToken)
     {
         var reloj = Stopwatch.StartNew();
-        var respuesta = await real.GenerarAsync(solicitud, cancellationToken);
-        reloj.Stop();
-        var valida = ValidadorDeSalidaDelModelo.Validar(respuesta.Texto).EsValida;
-        lock (registro)
-            registro.Add(
-                $"razonamiento={solicitud.Razonamiento} contados={_ultimoConteo} entrada_facturada={respuesta.TokensEntrada} "
-                + $"salida_facturada={respuesta.TokensSalida} stop_reason={respuesta.StopReason} salida_valida={valida} "
-                + $"latencia_ms={reloj.ElapsedMilliseconds} texto={respuesta.Texto}");
-        return respuesta;
+        try
+        {
+            var respuesta = await real.GenerarAsync(solicitud, cancellationToken);
+            reloj.Stop();
+            var valida = ValidadorDeSalidaDelModelo.Validar(respuesta.Texto).EsValida;
+            Anotar(new MedicionDeLlamada(
+                contexto.Escenario, contexto.Modo, _ultimoConteo, respuesta.TokensEntrada, respuesta.TokensSalida, respuesta.StopReason,
+                valida, reloj.ElapsedMilliseconds, CalculoDeCosto.CostoReal(respuesta.TokensEntrada, respuesta.TokensSalida, precios),
+                null, null, null, respuesta.Texto));
+            return respuesta;
+        }
+        catch (Exception ex) when (ex is RespuestaConErrorException or ResultadoInciertoException or SalidaInvalidaException)
+        {
+            // Solo el tipo y, si lo hay, el estado y el error.type documentado; nunca el mensaje.
+            reloj.Stop();
+            var uso = (ex as RespuestaConErrorException)?.Uso ?? (ex as SalidaInvalidaException)?.Uso;
+            Anotar(new MedicionDeLlamada(
+                contexto.Escenario, contexto.Modo, _ultimoConteo, uso?.TokensEntrada, uso?.TokensSalida, null, null,
+                reloj.ElapsedMilliseconds, uso is null ? null : CalculoDeCosto.CostoReal(uso.TokensEntrada, uso.TokensSalida, precios),
+                ex.GetType().Name, (ex as RespuestaConErrorException)?.Estado, (ex as RespuestaConErrorException)?.TipoDeError, null));
+            throw;
+        }
+    }
+
+    private void Anotar(MedicionDeLlamada medicion)
+    {
+        lock (registro) registro.Add(medicion);
     }
 }
 
 /// <summary>
-/// La prueba de humo con la clave real (Spec 007 §4): cinco fixtures narrativos por cada modo de razonamiento, cada modo en su propia
-/// liga (<c>liga-humo-a</c> para <c>Deshabilitado</c>, <c>liga-humo-b</c> para <c>Adaptativo</c>) y con sus propios cinco partidos:
-/// diez claves (tenant, partido, huella) distintas, así que cada corrida es una primera generación (R-16) y ninguna usa ni bloquea el
-/// resumen de otra. Cuesta menos de US$0,01. <b>Está implementada y no se ejecuta en la Fase A</b>: el propietario debe confirmar antes
-/// la cuenta, el saldo prepago y la recarga automática apagada.
+/// La confirmación de T-21 b con la clave real, en la configuración de producción (Spec 007 v5 §4): cinco fixtures narrativos en una sola
+/// liga (<c>liga-humo-a</c>), con el <c>IA:Razonamiento</c> efectivo del registro, que la prueba no fija sino que comprueba antes de la
+/// primera llamada pagada. Cinco claves (tenant, partido, huella) distintas: cada una es una primera generación (R-16). Los resultados y
+/// los textos se escriben en <c>GOALFLOW_HUMO_SALIDA</c> (fuera del repo), aun si una aserción falla; un fallo reintentable de un escenario
+/// se anota y no detiene a los demás.
 /// </summary>
 [Collection(ColeccionDeIa.Nombre)]
 public class PruebaDeHumoConProveedorRealTests(BaseDeAislamiento db, ITestOutputHelper salida)
@@ -73,6 +106,8 @@ public class PruebaDeHumoConProveedorRealTests(BaseDeAislamiento db, ITestOutput
         new("Jugado", Marcador: (0, 0), Tarjetas: [("Jugador Uno", "Amarilla", 2), ("Jugador Tres", "Azul", 1), ("Jugador Cuatro", "Roja", 1)]),
     ];
 
+    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
+
     private async Task<TenantId> LigaAsync(string slug)
     {
         await db.EjecutarComoSuperusuario($"""
@@ -86,59 +121,173 @@ public class PruebaDeHumoConProveedorRealTests(BaseDeAislamiento db, ITestOutput
         return new TenantId((Guid)(await comando.ExecuteScalarAsync())!);
     }
 
-    [HechoConClaveReal]
-    public async Task Humo_cinco_fixtures_narrativos_por_cada_modo_de_razonamiento_dejan_diez_llamadas_conciliadas_y_diez_resumenes()
+    /// <summary>La carpeta de evidencia: absoluta y fuera de cualquier repositorio git. Se valida antes de la primera llamada pagada.</summary>
+    private static string CarpetaDeSalida()
     {
+        var ruta = Environment.GetEnvironmentVariable("GOALFLOW_HUMO_SALIDA");
+        if (string.IsNullOrWhiteSpace(ruta) || !Path.IsPathFullyQualified(ruta))
+            throw new InvalidOperationException("GOALFLOW_HUMO_SALIDA debe ser una ruta absoluta; se aborta antes de llamar al proveedor.");
+        for (var d = new DirectoryInfo(Path.GetFullPath(ruta)); d is not null; d = d.Parent)
+            if (Directory.Exists(Path.Combine(d.FullName, ".git")) || File.Exists(Path.Combine(d.FullName, ".git")))
+                throw new InvalidOperationException("GOALFLOW_HUMO_SALIDA no puede estar dentro de un repositorio git.");
+        Directory.CreateDirectory(ruta);
+        return ruta;
+    }
+
+    /// <summary>
+    /// Cinco fixtures narrativos en la configuración de producción dejan cinco llamadas conciliadas y cinco resúmenes <c>PorVerificar</c>,
+    /// sin excesos ni fallos y con cinco salidas válidas (Spec 007 v5 §4, T-21 b). Antes de pagar, comprueba que el modo efectivo es
+    /// <c>Deshabilitado</c> sin imponerlo.
+    /// </summary>
+    [HechoConClaveReal]
+    public async Task Humo_cinco_fixtures_narrativos_en_la_configuracion_de_produccion_dejan_cinco_llamadas_conciliadas_y_cinco_resumenes()
+    {
+        var carpeta = CarpetaDeSalida();
         var clave = Environment.GetEnvironmentVariable(HechoConClaveRealAttribute.Variable)!;
         var partidos = new List<Guid>();
-        var registro = new List<string>();
+        var registro = new List<MedicionDeLlamada>();
+        var contexto = new ContextoDeMedicion();
+        var fallos = new List<object>();
 
-        foreach (var (slug, modo) in new[] { ("liga-humo-a", "Deshabilitado"), ("liga-humo-b", "Adaptativo") })
+        try
         {
-            var liga = await LigaAsync(slug);
-            await using var host = AnfitrionDeIa.Construir(
-                db,
-                c =>
-                {
-                    c["IA:ClaveApi"] = clave;
-                    c["IA:Razonamiento"] = modo;
-                    // La base desechable tiene más de dos ligas: el tope global se ajusta para que se cumpla la cota de R-18.
-                    c["IA:TopeMensualPorLigaMicroUsd"] = "1000000";
-                    c["IA:TopeMensualGlobalMicroUsd"] = "6000000";
-                    c["Mensajeria:TimeoutDelConsumidor"] = "00:02:00";
-                    c["IA:TimeoutDeLlamada"] = "00:01:00";
-                },
-                servicios: s =>
-                {
-                    s.RemoveAll<IGeneradorDeTexto>();
-                    s.AddScoped<IGeneradorDeTexto>(sp => new GeneradorMedido(
-                        new AdaptadorAnthropic(
-                            new HttpClient { BaseAddress = new Uri(AdaptadorAnthropic.UrlBase), Timeout = Timeout.InfiniteTimeSpan },
-                            sp.GetRequiredService<OpcionesDeIA>()),
-                        registro));
-                },
-                conGenerador: false);
-
-            foreach (var fixture in Fixtures)
             {
-                var partido = await PartidoSembrado.CrearAsync(db, liga);
-                await partido.GuardarAsync(fixture);
-                partidos.Add(partido.Id);
-                await host.ProcesarAsync(partido, 1);
+                var liga = await LigaAsync("liga-humo-a");
+                await using var host = AnfitrionDeIa.Construir(
+                    db,
+                    c =>
+                    {
+                        c["IA:ClaveApi"] = clave;
+                        // La base desechable tiene tres ligas: el tope global se ajusta para que se cumpla la cota de R-18.
+                        c["IA:TopeMensualPorLigaMicroUsd"] = "1000000";
+                        c["IA:TopeMensualGlobalMicroUsd"] = "6000000";
+                        c["Mensajeria:TimeoutDelConsumidor"] = "00:02:00";
+                        // El validador de mensajería exige TimeoutDelConsumidor < DuracionDelLease; el valor de prueba (10 s) no lo cumple.
+                        c["Mensajeria:DuracionDelLease"] = "00:03:00";
+                        c["IA:TimeoutDeLlamada"] = "00:01:00";
+                    },
+                    servicios: s =>
+                    {
+                        s.RemoveAll<IGeneradorDeTexto>();
+                        s.AddScoped<IGeneradorDeTexto>(sp =>
+                        {
+                            var opciones = sp.GetRequiredService<OpcionesDeIA>();
+                            return new GeneradorMedido(
+                                new AdaptadorAnthropic(
+                                    new HttpClient { BaseAddress = new Uri(AdaptadorAnthropic.UrlBase), Timeout = Timeout.InfiniteTimeSpan },
+                                    opciones),
+                                registro, contexto, opciones.Precios);
+                        });
+                    },
+                    conGenerador: false);
+
+                // Antes de pagar: el modo efectivo, tal como lo resuelve el registro. Si no es Deshabilitado, no hay ninguna llamada.
+                var efectivas = host.Services.GetRequiredService<OpcionesDeIA>();
+                Assert.Equal(RazonamientoDeIA.Deshabilitado, efectivas.Razonamiento);
+                var modo = efectivas.Razonamiento.ToString();
+
+                foreach (var fixture in Fixtures)
+                {
+                    contexto.Escenario = partidos.Count + 1;
+                    contexto.Modo = modo;
+                    var partido = await PartidoSembrado.CrearAsync(db, liga);
+                    await partido.GuardarAsync(fixture);
+                    partidos.Add(partido.Id);
+
+                    // Un fallo reintentable (p. ej. un corte por max_tokens) es un resultado de la medición: se anota y siguen los demás
+                    // escenarios. Solo el tipo de la excepción; nunca su mensaje.
+                    try
+                    {
+                        await host.ProcesarAsync(partido, 1);
+                    }
+                    catch (FalloReintentableException ex)
+                    {
+                        fallos.Add(new { escenario = contexto.Escenario, modo, codigo = ex.CodigoDeRazon });
+                    }
+                }
             }
         }
-
-        foreach (var linea in registro) salida.WriteLine(linea);
+        finally
+        {
+            await EscribirEvidenciaAsync(carpeta, partidos, registro, fallos);
+        }
 
         var ids = string.Join(",", partidos.Select(p => $"'{p}'"));
         await using var anfitrionDeMedicion = AnfitrionDeIa.Construir(db, conGenerador: false);
-        Assert.Equal(10, await anfitrionDeMedicion.Contar(
+        Assert.Equal(5, await anfitrionDeMedicion.Contar(
             $"select count(*) from goalflow.llamadas_ia where partido_id in ({ids}) and estado = 'Conciliada'"));
-        Assert.Equal(10, await anfitrionDeMedicion.Contar(
+        Assert.Equal(5, await anfitrionDeMedicion.Contar(
             $"select count(*) from goalflow.resumenes_partido where partido_id in ({ids}) and origen = 'Modelo' and estado = 'PorVerificar'"));
         var excesos = await anfitrionDeMedicion.Contar(
             $"select count(*) from goalflow.llamadas_ia where partido_id in ({ids}) and resultado like '%_exceso'");
-        salida.WriteLine($"excesos de costo sobre la reserva: {excesos} de 10");
-        Assert.Equal(10, registro.Count);
+        salida.WriteLine($"excesos de costo sobre la reserva: {excesos} de 5");
+        Assert.Equal(0, excesos);
+        Assert.Empty(fallos);
+        Assert.Equal(5, registro.Count);
+        Assert.All(registro, m =>
+        {
+            Assert.Equal("end_turn", m.StopReason);
+            Assert.True(m.SalidaValida);
+        });
+    }
+
+    /// <summary>Escribe resultados y textos en la carpeta, aun si una aserción falla después. Nunca incluye la clave ni la configuración.</summary>
+    private async Task EscribirEvidenciaAsync(string carpeta, List<Guid> partidos, List<MedicionDeLlamada> registro, List<object> fallos)
+    {
+        List<object> filasDeBase = [];
+        try
+        {
+            if (partidos.Count > 0)
+            {
+                await using var anfitrion = AnfitrionDeIa.Construir(db, conGenerador: false);
+                var ids = string.Join(",", partidos.Select(p => $"'{p}'"));
+                foreach (var f in await anfitrion.Filas(
+                    "select l.partido_id, l.numero, l.estado, l.reserva, l.tokens_entrada, l.tokens_salida, l.costo, l.resultado "
+                    + $"from goalflow.llamadas_ia l where l.partido_id in ({ids}) order by l.creado_en"))
+                {
+                    filasDeBase.Add(new
+                    {
+                        partido = f[0],
+                        numero = f[1],
+                        estado = f[2],
+                        reservaMicroUsd = f[3],
+                        tokensEntrada = f[4],
+                        tokensSalida = f[5],
+                        costoMicroUsd = f[6],
+                        resultado = f[7],
+                        excesoMicroUsd = f[6] is long costo && f[3] is long reserva && costo > reserva ? costo - reserva : 0L,
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            filasDeBase.Add(new { errorAlLeerLaBase = ex.GetType().Name });
+        }
+
+        // llamadas.json: las métricas de las llamadas efectivamente realizadas y el resultado de cada escenario (sin los textos).
+        MedicionDeLlamada[] medidas;
+        lock (registro) medidas = [.. registro];
+        var llamadas = medidas.Select(m => m with { Texto = null }).ToList();
+        await File.WriteAllTextAsync(
+            Path.Combine(carpeta, "llamadas.json"),
+            JsonSerializer.Serialize(
+                new { escenariosIniciados = partidos.Count, llamadas, fallosDelConsumidor = fallos, llamadasEnBase = filasDeBase }, Json));
+
+        // textos.md: solo los textos que el proveedor devolvió, por escenario; nada se inventa.
+        var md = new System.Text.StringBuilder("# Textos de la prueba de humo T-21(b)\n");
+        foreach (var m in medidas.OrderBy(m => m.Escenario))
+        {
+            md.Append($"\n## Escenario {m.Escenario} · {m.Modo}\n\n")
+              .Append($"stop_reason={m.StopReason} · salida_valida={m.SalidaValida}\n\n");
+            md.Append(string.IsNullOrEmpty(m.Texto) ? "_Sin texto devuelto por el proveedor._\n" : $"```\n{m.Texto}\n```\n");
+        }
+
+        for (var i = 1; i <= partidos.Count; i++)
+            if (!medidas.Any(m => m.Escenario == i))
+                md.Append($"\n## Escenario {i}\n\n_Sin llamada pagada ni texto._\n");
+
+        await File.WriteAllTextAsync(Path.Combine(carpeta, "textos.md"), md.ToString());
+        salida.WriteLine($"evidencia escrita: {medidas.Length} llamadas medidas, {fallos.Count} fallos del consumidor");
     }
 }
