@@ -1,0 +1,93 @@
+namespace GoalFlow.Application.IA;
+
+/// <summary>Los tokens que el proveedor reportó en su respuesta (<c>usage</c>).</summary>
+public sealed record UsoReportado(int TokensEntrada, int TokensSalida);
+
+/// <summary>
+/// La solicitud exacta, igual para contar y para generar (Spec 007 R-28): el texto de sistema, la entrada canónica (que viaja
+/// solo en el bloque de datos del mensaje de usuario), el límite de salida y el ajuste de razonamiento.
+/// </summary>
+public sealed record SolicitudDeGeneracion(
+    string TextoDeSistema, string EntradaCanonica, int MaxTokensDeSalida, RazonamientoDeIA Razonamiento);
+
+/// <summary>La respuesta: el texto (los bloques de tipo texto concatenados), el <c>stop_reason</c> y el uso facturable.</summary>
+public sealed record RespuestaGenerada(string Texto, string StopReason, int TokensEntrada, int TokensSalida);
+
+/// <summary>
+/// El proveedor de texto detrás de un puerto (ADR-12 §2.1). Ambas operaciones lanzan una de tres excepciones específicas:
+/// <see cref="RespuestaConErrorException"/>, <see cref="ResultadoInciertoException"/> o <see cref="SalidaInvalidaException"/>.
+/// </summary>
+public interface IGeneradorDeTexto
+{
+    /// <summary>Cuenta los tokens de entrada de la solicitud exacta con el endpoint gratuito: una estimación (R-12).</summary>
+    Task<int> ContarAsync(SolicitudDeGeneracion solicitud, CancellationToken cancellationToken);
+
+    /// <summary>Genera el texto. Es la única llamada pagada.</summary>
+    Task<RespuestaGenerada> GenerarAsync(SolicitudDeGeneracion solicitud, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Los valores documentados de <c>error.type</c> del proveedor (ADR-12 hecho 9, leído el 2026-11-11). Solo estos se aceptan; cualquier otro
+/// valor, o su ausencia, es <see cref="Desconocido"/>. La lista puede crecer con el tiempo: crecer es una decisión de la Spec, no del código.
+/// </summary>
+public static class TiposDeErrorDelProveedor
+{
+    public const string Desconocido = "desconocido";
+    public const string SolicitudInvalida = "invalid_request_error";
+    public const string Autenticacion = "authentication_error";
+    public const string Facturacion = "billing_error";
+    public const string Permisos = "permission_error";
+    public const string NoEncontrado = "not_found_error";
+    public const string Conflicto = "conflict_error";
+    public const string SolicitudDemasiadoGrande = "request_too_large";
+    public const string LimiteDeFrecuencia = "rate_limit_error";
+    public const string ErrorDeApi = "api_error";
+    public const string TiempoAgotado = "timeout_error";
+    public const string Sobrecargado = "overloaded_error";
+
+    public static IReadOnlySet<string> Documentados { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        SolicitudInvalida, Autenticacion, Facturacion, Permisos, NoEncontrado, Conflicto, SolicitudDemasiadoGrande,
+        LimiteDeFrecuencia, ErrorDeApi, TiempoAgotado, Sobrecargado,
+    };
+
+    /// <summary>El tipo documentado tal cual, o <see cref="Desconocido"/>. Comparación exacta, sin mayúsculas ni espacios tolerados.</summary>
+    public static string Normalizar(string? tipo) => tipo is not null && Documentados.Contains(tipo) ? tipo : Desconocido;
+}
+
+/// <summary>
+/// El proveedor respondió con un estado de error. Lleva el estado HTTP, el <c>error.type</c> documentado (o <c>desconocido</c>) y el uso
+/// reportado, si lo hubo. <b>Nunca</b> lleva el mensaje de error del proveedor (R-28): el parámetro <paramref name="mensaje"/> es solo para
+/// textos propios y el adaptador no lo usa.
+/// </summary>
+public class RespuestaConErrorException(int estado, UsoReportado? uso, string? mensaje = null, string? tipoDeError = null)
+    : Exception(mensaje ?? "El proveedor respondió con un error.")
+{
+    public int Estado { get; } = estado;
+
+    public UsoReportado? Uso { get; } = uso;
+
+    /// <summary>Uno de <see cref="TiposDeErrorDelProveedor.Documentados"/>, o <see cref="TiposDeErrorDelProveedor.Desconocido"/>.</summary>
+    public string TipoDeError { get; } = TiposDeErrorDelProveedor.Normalizar(tipoDeError);
+}
+
+/// <summary>No hubo respuesta: tiempo agotado, conexión perdida o una excepción sin respuesta. Pudo cobrarse (R-21 f).</summary>
+public class ResultadoInciertoException(string? mensaje = null, Exception? interna = null)
+    : Exception(mensaje ?? "No hubo respuesta del proveedor.", interna);
+
+/// <summary>El proveedor respondió con éxito pero el cuerpo no se pudo interpretar. Lleva el uso reportado, si lo hubo.</summary>
+public class SalidaInvalidaException(UsoReportado? uso, string? mensaje = null)
+    : Exception(mensaje ?? "La respuesta del proveedor no tiene la forma esperada.")
+{
+    public UsoReportado? Uso { get; } = uso;
+}
+
+/// <summary>
+/// Un fallo que el outbox reintenta con su backoff (ADR-02): el código de razón es estable y no lleva datos del usuario.
+/// El ciclo guarda solo el nombre del tipo; el código queda en el registro estructurado del consumidor.
+/// </summary>
+public class FalloReintentableException(string codigoDeRazon, Exception? interna = null)
+    : Exception("Fallo reintentable del consumidor.", interna)
+{
+    public string CodigoDeRazon { get; } = codigoDeRazon;
+}
