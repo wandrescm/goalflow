@@ -234,6 +234,31 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
         Assert.StartsWith("Equipo Uno 1-0 Equipo Dos. Goles de Equipo Uno: Jugador Uno.", borrador.Texto);
     }
 
+    // ---- T-14 (b) (R-02, R-17, R-25): el tope vale entre entregas distintas de la misma huella ----
+
+    [Fact]
+    public async Task T14b_el_tope_de_3_llamadas_vale_entre_entregas_distintas_de_la_misma_huella()
+    {
+        await using var host = AnfitrionDeIa.Construir(db);
+        var p = await PartidoSembrado.CrearAsync(db, LigaA);
+        host.Control.AlGenerar = _ => throw new ResultadoInciertoException();
+
+        await p.GuardarAsync(PlanillaSembrada.ConGoleador("Jugador Uno")); // v1
+        for (var intento = 1; intento <= 3; intento++)
+            await Assert.ThrowsAsync<FalloReintentableException>(() => host.ProcesarAsync(p, 1, intento));
+        Assert.Equal(3, (await host.LlamadasDe(p)).Count); // tres filas para la huella de la v1
+
+        await p.GuardarAsync(PlanillaSembrada.ConGoleador("Jugador Dos")); // v2: otro goleador, guardada y sin procesar
+        await p.GuardarAsync(PlanillaSembrada.ConGoleador("Jugador Uno")); // v3: restaura el contenido de la v1
+
+        await host.ProcesarAsync(p, 3, intento: 1); // su primer intento de entrega
+
+        Assert.Equal(3, host.Control.Generaciones); // no hay una cuarta llamada: el tope se cuenta en la base, no por intento
+        Assert.Equal(3, (await host.LlamadasDe(p)).Count);
+        var borrador = Assert.Single(await host.ResumenesDe(p));
+        Assert.Equal(("Plantilla", "Borrador", "limite_de_llamadas", 3), (borrador.Origen, borrador.Estado, borrador.Motivo, borrador.Version));
+    }
+
     // ---- T-15 (R-21 b a f, h): un caso por fila de la tabla de ADR-12 §2.6 (Spec 007 v3, ADR-12 C-23) ----
 
     [Theory]
