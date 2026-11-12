@@ -1,6 +1,6 @@
 # Spec 007: A-01 match summary, AI budget and backfill
 
-- **Status:** Approved (2026-11-11, S6D1, H13), by the owner after the v2 review and two editorial adjustments (C-02, §4 smoke test). History: v1 built from ADR-12 and the owner's decisions of 2026-11-11; v2 after the owner's review the same day (six corrections and three integration checks: R-01, R-06 to R-09, R-11, R-12, R-19, R-21, R-23, R-24, R-28, R-29; T-01, T-02, T-04, T-05, T-15, T-19, T-21, T-22, T-28; T-30 added; C-05 to C-10; M9). Implementation authorized under the H14 handoff. **Amended on 2026-11-11 after Phase A (v3): R-11, R-21, R-27, R-28, R-29; T-04, T-15, T-22; C-11 to C-13. Accepted by the owner the same day; implemented by the Phase A.2 handoff.** **Amended on 2026-11-11 after the Phase B audit (v4): T-14 (b) added, because mutant M7 survived; T-22 wording aligned with R-29 (D-A2-5). Test-only; no change of behavior.**
+- **Status:** Implemented (2026-11-11). PR #17 merged as `c82f9e1` (CI #50 green; Render *Live* with `c82f9e1`; `/health` 200). Migration `20261111181551_ResumenesDePartido` applied by the owner as `postgres` and verified in production the same day. **Exception:** the smoke test with the real key (T-21 b) has not been run yet. On 2026-11-11 the owner confirmed the Anthropic account: US$5 of prepaid credits, automatic reload off, and an API key created and stored outside the repository (ADR-12 C-01). `IA:Habilitada` stays false in production until real data exists. History: v1 and v2 on 2026-11-11 (approved after the owner's review); v3 after Phase A (provider error policy, template punctuation, own-goal format); v4 after the Phase B audit (T-14 b, because M7 survived; T-22 wording).
 - **Date:** 2026-11-11
 - **Related:** ADR-12 (this feature's decisions), ADR-02 (amended §2.3 and §2.10), ADR-03, ADR-14 (§2.3 amended in wording, §2.11), Spec 004 (additive: targeted publication), Spec 005 (R-34, R-35, T-19), Spec 006 (R-07, R-11, R-12, R-20, R-23 to R-25, §7.1)
 - **Effort:** High for the budget store and the consumer (`opusplan`); Medium (Sonnet) for the rest
@@ -164,14 +164,14 @@ The design decisions and their history are in ADR-12 §6 (C-01 to C-13). This Sp
 
 ## 8. Definition of done
 
-- [ ] All tests above pass and none was modified to make it pass.
-- [ ] Every requirement maps to at least one test (validation table in the PR).
-- [ ] No new warnings; no secrets in the diff; no raw SQL outside the migration; no new packages.
-- [ ] ADR-12 accepted; ADR-02 amended (§2.3 targeted publication and backfill obligation fulfilled; §2.10 Polly closed); ADR-14 §2.3 and C-15 amended in wording (callers of the tenant enumeration, ADR-12 C-14); Spec 004 amended additively (R-31 here); `CLAUDE.md` "Si se implementan funciones de IA" updated with the budget rule.
-- [ ] Migration script applied by the owner as `postgres` before the merge.
-- [ ] Smoke test with the real key passed (§4), after the owner confirms the account (ADR-12 C-01).
-- [ ] PR description contains the validation table, the evidence of §8.1 and the mutation audit.
-- [ ] `IA:Habilitada` stays false in production until the owner enables it.
+- [x] All tests above pass and none was modified to make it pass: 789 passed, 0 failed, 1 skipped (the smoke test) at `fa76b31`; CI #50 green on `c82f9e1`. The only approved assertions changed were the ones the owner authorized for v3 (T-04, T-15, T-22) and, retrospectively and without precedent, the T-09 literal (D-A2-1).
+- [x] Every requirement maps to at least one test (§9).
+- [x] No new warnings; no secrets in the diff; no raw SQL outside the migration; no new packages.
+- [x] ADR-12 accepted; ADR-02 amended (§2.3 targeted publication and backfill obligation fulfilled; §2.10 Polly closed); ADR-14 §2.3 and C-15 amended in wording (callers of the tenant enumeration, ADR-12 C-14); `CLAUDE.md` "Funciones de IA" updated with the budget rule.
+- [x] Migration script applied by the owner as `postgres` before the merge, and verified: 6 migrations, the last one `20261111181551_ResumenesDePartido`; RLS on and exactly one policy on each of the three tables; `goalflow_app` with `SELECT, INSERT` on `resumenes_partido` and `SELECT, INSERT, UPDATE` on `llamadas_ia` and `presupuestos_ia`, without `DELETE`; `ux_presupuestos_ia_tenant_mes` unique on (`tenant_id`, `mes`); the three tables empty.
+- [ ] Smoke test with the real key passed (§4). The account was confirmed by the owner on 2026-11-11 (US$5 prepaid, automatic reload off, key stored outside the repository); **the run is pending**.
+- [x] PR description contains the validation table, the evidence of §8.1 and the mutation audit (PR #17, sections 2 to 11).
+- [x] `IA:Habilitada` stays false in production until the owner enables it.
 
 ### 8.1 Delivery, evidence and audit
 
@@ -210,14 +210,41 @@ If the PR grows past one session, split before commit 5. The general handoff rul
 
 ## 9. Validation (filled in the closing commit)
 
-> While the PR is under review, this evidence lives in the PR description.
+Evidence for every row: PR #17 description (section 2, the validation table at `2a6da23`; sections 9 and 11 for v3 and v4) and CI #50 on `c82f9e1`. Mutation audit: section 10 (M1 to M9) and section 11 (M7 second run, M6b): every mutant killed.
 
 | Requirement | Test | Result | Evidence |
 | --- | --- | --- | --- |
-| | | | |
+| R-01 to R-03, R-05 | T-25 (`ModeloDeIaTests.T25_*`; exact sets in `ModeloDeTorneosArquitecturaTests`, `MultiTenancyArquitecturaTests.T24`, `ConsultasSegurasTests` F4) | Passed | PR §2; M6 and M6b killed (`T23`, `T33`, `T25`) |
+| R-04, R-26 | T-24 (`AislamientoDeIaTests.T24_*`) | Passed | PR §2; production check of RLS and privileges |
+| R-06, R-07 | T-28 (`RegistroYArranqueDeIaTests.T28_*`, `RellenoDeResumenesTests.T28_*`) | Passed | PR §2 (see §10: `RellenoDeResumenesTests.T28_…un_segundo_arranque_no_duplica` is timing-sensitive) |
+| R-08, R-09 | T-01, T-02 (`EntradaCanonicaTests`) | Passed | PR §2; M3 and M9 killed |
+| R-10 | T-03 | Passed | PR §2 |
+| R-11 | T-04 (`PlantillasDeResumenTests`) | Passed | PR §2 and §9 (v3 goldens) |
+| R-12 | T-05; T-21 a | Passed | PR §2 |
+| R-12, R-23 (measurement) | T-21 b (smoke test) | **Skipped: account confirmed on 2026-11-11, run pending** | PR §6 |
+| R-13 | T-06 | Passed | PR §2; M2 killed |
+| R-13 to R-16, R-22, R-33 | T-07, T-08, R16 test | Passed | PR §2; M2 and M3 killed |
+| R-14, R-15 | T-09 | Passed | PR §2 and §9.7 (D-A2-1) |
+| R-17, R-25, R-02 | T-14 (a) and T-14 (b) | Passed | PR §2 and §11; M5 and M7 killed |
+| R-18 | T-18 | Passed | PR §2 |
+| R-19 | T-10 (critical), T-11, T-12, T-30 | Passed | PR §2; M1 killed in 5 of 5 runs |
+| R-19 (0), R-21 (g) | T-19 | Passed | PR §2 |
+| R-20, R-21 (f) | T-13 | Passed | PR §2; M5 killed |
+| R-21 (b) to (h) | T-15 (14-case table, counting cases, 402 tests), `ClasificadorDeErrorDelProveedorTests` | Passed | PR §9.5 |
+| R-22 | T-16 | Passed | PR §2; M8 killed |
+| R-23 | T-17, T-21 a, T-30 | Passed | PR §2 |
+| R-24 | T-20 | Passed | PR §2 |
+| R-27 | T-23, T-22 (end-to-end log cases) | Passed | PR §2 and §9.4 |
+| R-28 to R-30 | T-22 (`AdaptadorAnthropicTests`) | Passed | PR §2 and §9.4 |
+| R-31 | T-26 (`PublicarParaTests`) | Passed | PR §2 |
+| R-32, R-34 | T-27 a to d2 | Passed | PR §2; M4 killed |
+| R-35 | T-29 and the existing graph, event-contract and raw-SQL tests | Passed | PR §2 |
 
 ## 10. Risks and open items
 
+- **Test debt:** `RellenoDeResumenesTests.T28_con_la_IA_y_la_bandera_corre_una_vez_por_arranque_y_un_segundo_arranque_no_duplica` asserts a log line as soon as the delivery row appears, without waiting for the backfill to finish; it failed once under load (Phase B.2). Fix as the first commit of H15: wait for the backfill to complete before reading the log. Same assertion.
+- **Smoke test (T-21 b):** the account is confirmed (2026-11-11); the run is pending, with the key passed to the session only as the environment variable `IA__ClaveApi`. Until it runs, `IA:Razonamiento` stays `Deshabilitado` without measurement (ADR-12 C-21).
+- **Spending layers:** the prepaid balance (US$5, automatic reload off) is above the internal monthly ceiling (US$3), so in normal operation layer 1 cuts before the provider's balance does (ADR-12 §2.1, C-23).
 - Accepted risks: renames hide summaries (ADR-12 O-01), and the input part of a reservation is an estimate (ADR-12 C-20, measured by T-21 and metric 2).
 - While the free Render service sleeps, summaries wait with no upper bound (ADR-02 §2.8).
 - Spec 008 (H15) must define how verification outcomes are recorded given that `resumenes_partido` has no `UPDATE` (a new table, or an amendment to R-04).
