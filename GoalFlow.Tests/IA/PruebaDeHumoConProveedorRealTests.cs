@@ -85,11 +85,11 @@ public sealed class GeneradorMedido(
 }
 
 /// <summary>
-/// La prueba de humo con la clave real (Spec 007 §4): cinco fixtures narrativos por cada modo de razonamiento, cada modo en su propia
-/// liga (<c>liga-humo-a</c> para <c>Deshabilitado</c>, <c>liga-humo-b</c> para <c>Adaptativo</c>) y con sus propios cinco partidos:
-/// diez claves (tenant, partido, huella) distintas, así que cada corrida es una primera generación (R-16) y ninguna usa ni bloquea el
-/// resumen de otra. Cuesta menos de US$0,01. Los resultados y los textos se escriben en <c>GOALFLOW_HUMO_SALIDA</c> (fuera del repo),
-/// aun si una aserción falla; un fallo reintentable de un escenario se anota y no detiene a los demás.
+/// La confirmación de T-21 b con la clave real, en la configuración de producción (Spec 007 v5 §4): cinco fixtures narrativos en una sola
+/// liga (<c>liga-humo-a</c>), con el <c>IA:Razonamiento</c> efectivo del registro, que la prueba no fija sino que comprueba antes de la
+/// primera llamada pagada. Cinco claves (tenant, partido, huella) distintas: cada una es una primera generación (R-16). Los resultados y
+/// los textos se escriben en <c>GOALFLOW_HUMO_SALIDA</c> (fuera del repo), aun si una aserción falla; un fallo reintentable de un escenario
+/// se anota y no detiene a los demás.
 /// </summary>
 [Collection(ColeccionDeIa.Nombre)]
 public class PruebaDeHumoConProveedorRealTests(BaseDeAislamiento db, ITestOutputHelper salida)
@@ -134,8 +134,13 @@ public class PruebaDeHumoConProveedorRealTests(BaseDeAislamiento db, ITestOutput
         return ruta;
     }
 
+    /// <summary>
+    /// Cinco fixtures narrativos en la configuración de producción dejan cinco llamadas conciliadas y cinco resúmenes <c>PorVerificar</c>,
+    /// sin excesos ni fallos y con cinco salidas válidas (Spec 007 v5 §4, T-21 b). Antes de pagar, comprueba que el modo efectivo es
+    /// <c>Deshabilitado</c> sin imponerlo.
+    /// </summary>
     [HechoConClaveReal]
-    public async Task Humo_cinco_fixtures_narrativos_por_cada_modo_de_razonamiento_dejan_diez_llamadas_conciliadas_y_diez_resumenes()
+    public async Task Humo_cinco_fixtures_narrativos_en_la_configuracion_de_produccion_dejan_cinco_llamadas_conciliadas_y_cinco_resumenes()
     {
         var carpeta = CarpetaDeSalida();
         var clave = Environment.GetEnvironmentVariable(HechoConClaveRealAttribute.Variable)!;
@@ -146,16 +151,14 @@ public class PruebaDeHumoConProveedorRealTests(BaseDeAislamiento db, ITestOutput
 
         try
         {
-            foreach (var (slug, modo) in new[] { ("liga-humo-a", "Deshabilitado"), ("liga-humo-b", "Adaptativo") })
             {
-                var liga = await LigaAsync(slug);
+                var liga = await LigaAsync("liga-humo-a");
                 await using var host = AnfitrionDeIa.Construir(
                     db,
                     c =>
                     {
                         c["IA:ClaveApi"] = clave;
-                        c["IA:Razonamiento"] = modo;
-                        // La base desechable tiene más de dos ligas: el tope global se ajusta para que se cumpla la cota de R-18.
+                        // La base desechable tiene tres ligas: el tope global se ajusta para que se cumpla la cota de R-18.
                         c["IA:TopeMensualPorLigaMicroUsd"] = "1000000";
                         c["IA:TopeMensualGlobalMicroUsd"] = "6000000";
                         c["Mensajeria:TimeoutDelConsumidor"] = "00:02:00";
@@ -177,6 +180,11 @@ public class PruebaDeHumoConProveedorRealTests(BaseDeAislamiento db, ITestOutput
                         });
                     },
                     conGenerador: false);
+
+                // Antes de pagar: el modo efectivo, tal como lo resuelve el registro. Si no es Deshabilitado, no hay ninguna llamada.
+                var efectivas = host.Services.GetRequiredService<OpcionesDeIA>();
+                Assert.Equal(RazonamientoDeIA.Deshabilitado, efectivas.Razonamiento);
+                var modo = efectivas.Razonamiento.ToString();
 
                 foreach (var fixture in Fixtures)
                 {
@@ -206,14 +214,21 @@ public class PruebaDeHumoConProveedorRealTests(BaseDeAislamiento db, ITestOutput
 
         var ids = string.Join(",", partidos.Select(p => $"'{p}'"));
         await using var anfitrionDeMedicion = AnfitrionDeIa.Construir(db, conGenerador: false);
-        Assert.Equal(10, await anfitrionDeMedicion.Contar(
+        Assert.Equal(5, await anfitrionDeMedicion.Contar(
             $"select count(*) from goalflow.llamadas_ia where partido_id in ({ids}) and estado = 'Conciliada'"));
-        Assert.Equal(10, await anfitrionDeMedicion.Contar(
+        Assert.Equal(5, await anfitrionDeMedicion.Contar(
             $"select count(*) from goalflow.resumenes_partido where partido_id in ({ids}) and origen = 'Modelo' and estado = 'PorVerificar'"));
         var excesos = await anfitrionDeMedicion.Contar(
             $"select count(*) from goalflow.llamadas_ia where partido_id in ({ids}) and resultado like '%_exceso'");
-        salida.WriteLine($"excesos de costo sobre la reserva: {excesos} de 10");
-        Assert.Equal(10, registro.Count);
+        salida.WriteLine($"excesos de costo sobre la reserva: {excesos} de 5");
+        Assert.Equal(0, excesos);
+        Assert.Empty(fallos);
+        Assert.Equal(5, registro.Count);
+        Assert.All(registro, m =>
+        {
+            Assert.Equal("end_turn", m.StopReason);
+            Assert.True(m.SalidaValida);
+        });
     }
 
     /// <summary>Escribe resultados y textos en la carpeta, aun si una aserción falla después. Nunca incluye la clave ni la configuración.</summary>
