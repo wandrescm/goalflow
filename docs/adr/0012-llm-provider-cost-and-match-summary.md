@@ -1,8 +1,8 @@
 # ADR-12: LLM provider, cost ceiling and the A-01 generation policy
 
-- **Status:** Accepted (2026-11-11, S6D1, H13), by the owner after revision v2 and the two editorial adjustments to Spec 007, with the documented risks accepted: the reservation's input part is an estimate (C-20), and renames are not regenerated (O-01). History: v1 built from the owner's decisions of 2026-11-11 (P-09 and design challenges 1 to 5); v2 after the owner's review the same day (O-01 to O-04, C-03, C-08 and C-09 decided; corrections C-15 to C-22; three integration checks against the official documentation). **Operational preconditions met:** the owner confirmed the account, the prepaid balance and that automatic reload is off on 2026-11-11 (C-01), and the smoke test passed on 2026-11-12 (Spec 007 T-21 b). `IA:Habilitada` stays false in production until the owner enables it, when real data exists. **Amended on 2026-11-11 after Phase A of H14 (v3, accepted by the owner the same day): the provider error policy of §2.6 (C-23) and the punctuation of the administrative template (C-24); the own-goal format is documented (C-25). No change of design.** **Amended on 2026-11-12 (v4, by the owner): the thinking setting is confirmed as `Deshabilitado` with the smoke-test measurement (C-21). No change of design.**
+- **Status:** Accepted (2026-11-11, S6D1, H13), by the owner after revision v2 and the two editorial adjustments to Spec 007, with the documented risks accepted: the reservation's input part is an estimate (C-20), and renames are not regenerated (O-01). History: v1 built from the owner's decisions of 2026-11-11 (P-09 and design challenges 1 to 5); v2 after the owner's review the same day (O-01 to O-04, C-03, C-08 and C-09 decided; corrections C-15 to C-22; three integration checks against the official documentation). **Operational preconditions met:** the owner confirmed the account, the prepaid balance and that automatic reload is off on 2026-11-11 (C-01), and the smoke test passed on 2026-11-12 (Spec 007 T-21 b). `IA:Habilitada` stays false in production until the owner enables it, when real data exists. **Amended on 2026-11-11 after Phase A of H14 (v3, accepted by the owner the same day): the provider error policy of §2.6 (C-23) and the punctuation of the administrative template (C-24); the own-goal format is documented (C-25). No change of design.** **Amended on 2026-11-12 (v4, by the owner): the thinking setting is confirmed as `Deshabilitado` with the smoke-test measurement (C-21). No change of design.** **Amended on 2026-11-13 (v5, H15, with Spec 008): the deterministic verifier, the rejection outcome, derived publication and metric 1 (§2.3, §2.6, §2.9, §2.11, C-26 to C-30), and fact 10 brought up to date (owner's review). No schema change.**
 - **Date:** 2026-11-11
-- **Related:** ADR-02 (post-save pipeline; amended §2.3 and §2.10 with this ADR; closes C-08 and C-09), ADR-03 (module `IA`), ADR-05 (secrets and hosting), ADR-14 (multi-tenancy; §2.3 amended in wording only, C-14), Spec 004 (additive: targeted publication), Spec 005 (R-18 renames; R-34 exact sets), Spec 006 (C-14, C-17, §7.1), Spec 007
+- **Related:** ADR-02 (post-save pipeline; amended §2.3 and §2.10 with this ADR; closes C-08 and C-09), ADR-03 (module `IA`), ADR-05 (secrets and hosting), ADR-14 (multi-tenancy; §2.3 amended in wording only, C-14), Spec 004 (additive: targeted publication), Spec 005 (R-18 renames; R-34 exact sets), Spec 006 (C-14, C-17, §7.1), Spec 007, Spec 008 (verifier and publication)
 
 ## 1. Context
 
@@ -27,7 +27,7 @@ Facts that shape the decision:
    - `500 api_error`: retry with backoff. A 500 can carry the type `timeout_error` when the request reached the server's time limit before the response started.
    - `504 timeout_error`, `529 overloaded_error`.
    - Errors are JSON with `error.type` and `error.message`. The `type` values may grow over time.
-10. **Current production state.** Production has zero leagues. The Anthropic account and its balance are not yet confirmed by the owner, so P-09 is decided but not operationally enabled.
+10. **Production state.** Production has zero leagues. The Anthropic account, its prepaid balance and the absence of automatic reload were confirmed by the owner on 2026-11-11 (C-01), and the smoke test passed on 2026-11-12 (Spec 007 T-21 b); `IA:Habilitada` stays false until real data exists.
 
 ## 2. Decision
 
@@ -59,7 +59,7 @@ A-01 classifies the current sheet into exactly one of three outcomes (owner's de
 - **Stale deliveries do nothing.** A delivery whose version is lower than the match's current version completes without any call or write (the owner's challenge 1). The newer version has its own delivery.
 - **Input fingerprint.** The input of a summary is a canonical JSON document built from the current sheet (Spec 007 R-08): exactly the data that the model or the template receives, in a fixed order, with no identifiers. Its **fingerprint** is the SHA-256 of its UTF-8 bytes. Whatever reaches the model is in the fingerprint by construction, so no field can change the text without changing the fingerprint. This includes `tarjetasInformadas`, as the owner required (C-04). Lists are ordered **only by the values they emit**. Registration codes are not emitted and take no part in the order, so changing which registration holds a name changes nothing the model sees and nothing in the fingerprint. Two players with the same name on the same side are therefore indistinguishable in the input; that is accepted (C-18).
 - **One summary per (match, fingerprint).** A version whose fingerprint already has a summary (for example, a redelivery after a recorded success) completes without calling.
-- **Visibility is derived, never stored** (CLAUDE.md "derive, do not accumulate"). A summary is shown for a match **if and only if** its fingerprint equals the fingerprint of the match's current sheet (and, from H15, it passed verification). Consequences:
+- **Visibility is derived, never stored** (CLAUDE.md "derive, do not accumulate"). A summary is shown for a match **if and only if** its fingerprint equals the fingerprint of the match's current sheet, it is not a `Borrador`, and the current deterministic verifier approves its text against the current canonical input (Spec 008 R-17, C-27). A model text is also verified before it is stored, and a rejected text is never stored (§2.6). Consequences:
   - after a correction that changes the input, the old text disappears immediately, even before the worker runs (the owner's answer to challenge 1);
   - after a version whose input equals an earlier one (a correction reverted to earlier content, or a scorer swapped between two players with the same name), the existing summary is shown again without a new call. The rectification reason cannot change on its own (Spec 006 R-14);
   - after a withdrawal (`Programado`) nothing is shown, because no summary is produced for that state.
@@ -96,6 +96,7 @@ Outcomes are classified by the HTTP status and, where the documentation defines 
 | Success and valid output | Yes | Reconciled with the reported usage | Summary stored; completes |
 | Success but invalid output (not the schema, truncated by `max_tokens`, out of length bounds, control characters) | Yes | Reconciled | Retryable failure; the next attempt makes the next numbered call (§2.5) |
 | Success with `stop_reason` `refusal` | Yes | Reconciled | Draft with reason `rechazo_del_modelo`; completes |
+| Success, valid output, **rejected by the deterministic verifier** (Spec 008) | Yes | Reconciled with outcome `verificacion_rechazada:{version}:{rules}` | Nothing stored; retryable failure. The next attempt makes the next numbered call with the same request; the cap of §2.5 bounds it (C-26) |
 | `400` (malformed request, **or** an account spend limit or exhausted balance, which the API does not tell apart by status), `404`, `413` | Yes | Reconciled with the reported usage, or 0 | Draft with reason `solicitud_invalida`; completes. The reason means "the provider rejected the request"; a burst of them is the signal to check the account's balance and spend limits (C-23) |
 | `401`, `403` (credentials or permissions) | Yes | Reconciled (0) | Permanent failure `credencial_invalida` |
 | `402 billing_error` (billing or payment information) | Yes | Reconciled (0) | Permanent failure `facturacion_del_proveedor` |
@@ -128,7 +129,7 @@ Outcomes are classified by the HTTP status and, where the documentation defines 
 
 All three are read from `llamadas_ia` and `resumenes_partido` with SQL as `postgres` during the milestone (no endpoint):
 
-1. **Fidelity:** the share of model texts rejected by the verifier, and 100 % of published texts with every number and name present in the input (H15; until then, the rate of invalid output).
+1. **Fidelity:** the share of successful generations whose call outcome starts with `verificacion_rechazada` (Spec 008 R-14), per rule; and, by construction, every published text approved by the current verifier against the current input (Spec 008 R-17). The verifier checks names, numbers, chronology, incidents, setting, card reporting and colors with closed word lists; it does not prove semantic fidelity, and its known false negatives are pinned in Spec 008 (C-28).
 2. **Cost:** `consumido + reservado` per league and month, real cost per generated summary, and **overruns** (reconciliations whose cost exceeded the reservation) per month. Any overrun means the input margin is too small.
 3. **Amplification:** billed calls per model summary (target ≤ 1.2) and the number of uncertain calls (`Reservada` older than the lease). A value above target is the early signal of a loop, long before the ceiling.
 
@@ -155,7 +156,7 @@ With these values, a typical narrative (2,000 counted input tokens) reserves 525
 
 - **Placement.** Module `IA` (ADR-03): pure logic and ports in `GoalFlow.Application.IA`; adapters and mappings in `GoalFlow.Infrastructure.IA`; the read ports it needs in `GoalFlow.Application.Torneos.Contracts`, implemented in `GoalFlow.Infrastructure.Torneos`. `IA → Torneos.Contracts` is already allowed; ADR-03 is not amended. `IA` uses the shared namespaces `Mensajeria` and `Persistencia`.
 - **New tenant-scoped tables:** `resumenes_partido`, `llamadas_ia`, `presupuestos_ia`, with the `Tenant` filter, RLS and composite foreign keys to `partidos` (ADR-14 §2.11), in one migration.
-- **Out of scope:** the verifier and publication (H15, Spec 008); any read endpoint for summaries (H19); an Admin view of drafts; regenerating existing versions; A-02; RAG; Polly; an alert channel.
+- **Out of scope:** any read endpoint for summaries (H19); an Admin view of drafts or rejections; regenerating existing versions; A-02 (removed from the milestone's critical path at Control 1, C-30); an LLM judge; RAG; Polly; an alert channel. The verifier and derived publication are Spec 008.
 
 ## 3. Rejected alternatives
 
@@ -222,3 +223,11 @@ Spec 007 turns this ADR into EARS requirements and tests. The critical ones: the
 - **O-02** *0-0 without cards:* a deterministic template.
 - **O-03** *Call cap:* 3 per match and fingerprint, persisted in the database.
 - **O-04** *Error billing:* confirmed in the Help Center (C-15).
+
+### Added with Spec 008 (2026-11-13, H15)
+
+- **C-26** *How many billed calls can a rejected text cost?* The existing cap: a verifier rejection is reconciled and retryable, the retry resends the same request, and the cap of 3 per (match, fingerprint) bounds it; the attempt that finds 3 stored calls stores the `limite_de_llamadas` draft. Owner's prediction: 3 calls (correct) and 3 attempts (4: the draft is written by the next attempt). Owner, 2026-11-13.
+- **C-27** *Where is the verification outcome recorded?* Nowhere on the summary: a model text is verified before it is stored, a rejection lives in the call's outcome code, and publication is re-derived on every read with the current verifier. No new table, no `UPDATE`, no migration. A stricter verifier version hides texts it rejects without touching their rows; only a deploy can do that, and every rule change bumps the verifier version and reruns the Spec 008 corpus. Readers show the structured facts of the sheet when nothing is publishable. Owner, 2026-11-13 (option c).
+- **C-28** *What does the verifier check, and what not?* Names (closed sentence-start list), numbers (set membership against the input, names masked first), chronology, incidents and setting (closed word lists, because the input has none of them), card reporting ("none" versus "not reported") and colors. Not checked, and pinned as known false negatives: a correct number credited to the wrong player, and a real name with a false role. Owner's prediction: a names-and-numbers verifier rejects 0 of the 2 measured inventions; correct, which is why option B adds the word lists. Owner, 2026-11-13.
+- **C-29** *LLM judge?* No: it is not deterministic, it is billed, and it cannot be a gate. Owner, 2026-11-13.
+- **C-30** *A-02?* Removed from the milestone's critical path at Control 1. The verifier is a pure function that A-02 may reuse. Owner, 2026-11-13.
