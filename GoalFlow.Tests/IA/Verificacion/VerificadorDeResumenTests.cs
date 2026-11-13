@@ -253,6 +253,75 @@ public class VerificadorDeResumenTests
 
         // Con un nombre real, la negación no se aplica; con el carácter de uso privado, sí debe aplicarse.
         Assert.Empty(Reglas("No hubo ninguna tarjeta de Jugador Tres.", entrada));
-        Assert.Equal(["V6"], Reglas("No hubo ninguna tarjeta de .", entrada));
+        Assert.Equal(["V6"], Reglas("No hubo ninguna tarjeta de \uE000.", entrada));
+    }
+
+    // ---- T-15 (R-02, R-11 b): NFC y caracteres invisibles. Los invisibles se escriben con escapes \u, nunca literales. ----
+
+    [Theory]
+    [InlineData("a_U+00AD_dentro_de_amarilla")]
+    [InlineData("b_U+E000_entre_dos_palabras")]
+    [InlineData("c_U+200B_dentro_de_descontó")]
+    [InlineData("d_C1_entero_en_NFD")]
+    [InlineData("e_nombre_guardado_descompuesto_y_escrito_compuesto")]
+    [InlineData("f_nombre_de_equipo_con_U+200D_copiado_tal_cual")]
+    public void T15_NFC_y_caracteres_invisibles(string caso)
+    {
+        var c1 = CorpusV1.Caso("C1");
+        var entrada = CorpusV1.Entrada("F1");
+        string texto;
+        string[] esperado;
+
+        switch (caso[0])
+        {
+            case 'a':
+                texto = Reemplazar(c1.Texto, "amarilla", "ama\u00ADrilla");
+                esperado = ["V8"];
+                break;
+            case 'b':
+                texto = Reemplazar(c1.Texto, "El partido fue", "El partido \uE000 fue");
+                esperado = ["V8"];
+                break;
+            case 'c':
+                texto = Reemplazar(CorpusV1.Caso("M6").Texto, "descontó", "des\u200Bcontó");
+                esperado = ["V4", "V8"];
+                break;
+            case 'd':
+                texto = c1.Texto.Normalize(System.Text.NormalizationForm.FormD);
+                Assert.NotEqual(c1.Texto, texto); // el caso es real: hay letras acentuadas descompuestas
+                esperado = [];
+                break;
+            case 'e':
+            {
+                var datos = DatosDePrueba.Vacio() with
+                {
+                    Marcador = new MarcadorDelPartido(1, 0),
+                    Goles = [new GolDelPartido(LadoDelEquipo.Local, "Pe\u0301rez", "J-1", 1)],
+                };
+                entrada = EntradaCanonica.Construir(datos);
+                texto = "Equipo Uno venció 1-0 a Equipo Dos con gol de Pérez.";
+                esperado = [];
+                break;
+            }
+
+            default: // f
+            {
+                var local = "Equipo U\u200Dno";
+                entrada = EntradaCanonica.Construir(CorpusV1.Datos("F1") with { Local = local });
+                texto = Reemplazar(c1.Texto, "Equipo Uno", local);
+                esperado = [];
+                break;
+            }
+        }
+
+        Assert.Equal(esperado, Reglas(texto, entrada));
+    }
+
+    // El fragmento debe aparecer exactamente una vez en el texto base.
+    private static string Reemplazar(string texto, string de, string a)
+    {
+        var primero = texto.IndexOf(de, StringComparison.Ordinal);
+        Assert.True(primero >= 0 && texto.IndexOf(de, primero + 1, StringComparison.Ordinal) < 0, $"'{de}' debe aparecer una vez");
+        return texto.Replace(de, a, StringComparison.Ordinal);
     }
 }
