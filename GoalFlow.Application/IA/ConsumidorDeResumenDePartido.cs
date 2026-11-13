@@ -1,4 +1,5 @@
 using System.Globalization;
+using GoalFlow.Application.IA.Verificacion;
 using GoalFlow.Application.Mensajeria;
 using GoalFlow.Application.Persistencia;
 using GoalFlow.Application.Torneos.Contracts;
@@ -284,6 +285,22 @@ public sealed class ConsumidorDeResumenDePartido(
             var codigo = respuesta.StopReason == "max_tokens" ? "limite_de_tokens" : "salida_invalida";
             await ConciliarAsync(caso, llamadaId, numero, uso, codigo, cancellationToken);
             throw ReintentableConRegistro(caso, codigo, null, numero);
+        }
+
+        // Spec 008 R-13 a R-16: el verificador determinista va antes de cualquier escritura. Si rechaza, se concilia la llamada con
+        // su uso, no se guarda nada y se reintenta la misma solicitud; el tope de llamadas de R-17 cuenta también estas.
+        var veredicto = VerificadorDeResumen.Verificar(validacion.Texto!, caso.Entrada);
+        if (!veredicto.Aprobado)
+        {
+            var reglas = string.Join(',', veredicto.Reglas);
+            await ConciliarAsync(
+                caso, llamadaId, numero, uso, $"verificacion_rechazada:{VerificadorDeResumen.VersionDelVerificador}:{reglas}", cancellationToken);
+
+            // R-16: nunca el texto, un nombre, la entrada ni una palabra coincidente; solo identificadores y versiones.
+            logger.LogWarning(
+                "A-01 verificación rechazada: tenant {Tenant}, partido {Partido}, versión {Version}, huella {Huella}, llamada {Numero}, intento {Intento}, versión del verificador {VersionDelVerificador}, reglas {Reglas}.",
+                caso.Tenant.Value, caso.PartidoId, caso.Version, caso.Prefijo, numero, caso.Intento, VerificadorDeResumen.VersionDelVerificador, reglas);
+            throw ReintentableConRegistro(caso, "verificacion_rechazada", null, numero);
         }
 
         // (a) R-22: la conciliación y el resumen, en una sola transacción.
