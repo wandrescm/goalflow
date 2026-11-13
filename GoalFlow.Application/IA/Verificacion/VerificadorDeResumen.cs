@@ -21,6 +21,7 @@ public static class VerificadorDeResumen
     public const string V5 = "V5";
     public const string V6 = "V6";
     public const string V7 = "V7";
+    public const string V8 = "V8";
 
     // El marcador de un valor enmascarado: un carácter de uso privado, que no es letra, dígito ni terminador (R-02).
     private const char Marcador = '';
@@ -84,7 +85,8 @@ public static class VerificadorDeResumen
         ArgumentNullException.ThrowIfNull(texto);
         ArgumentNullException.ThrowIfNull(entrada);
 
-        var oraciones = Segmentar(Enmascarar(texto, entrada));
+        var (enmascarado, caracteresInvalidos) = Enmascarar(texto, entrada);
+        var oraciones = Segmentar(enmascarado);
         var numerosPermitidos = NumerosDeLaEntrada(entrada);
 
         var fallas = new List<string>(7);
@@ -95,35 +97,55 @@ public static class VerificadorDeResumen
         if (CoincideConLista(oraciones, Ambiente)) fallas.Add(V5);
         if (FallaLaInformacionDeTarjetas(oraciones, entrada)) fallas.Add(V6);
         if (FallaUnColor(oraciones, entrada)) fallas.Add(V7);
+        if (caracteresInvalidos) fallas.Add(V8);
         return new ResultadoDeVerificacion(fallas);
     }
 
     // ---- R-02: valores enmascarados ----
 
-    private static string Enmascarar(string texto, EntradaCanonica entrada)
+    // R-02: el texto y cada valor de M se normalizan a NFC antes de cualquier otra cosa. Un texto con sustitutos sueltos no se
+    // puede normalizar: se deja tal cual, y V8 lo rechaza por ellos.
+    private static string Nfc(string valor)
+    {
+        try
+        {
+            return valor.Normalize(NormalizationForm.FormC);
+        }
+        catch (ArgumentException)
+        {
+            return valor;
+        }
+    }
+
+    // R-11 b: los caracteres que parten un token o imitan al marcador. Ninguno aparece en español en NFC.
+    private static bool EsCaracterInvalido(char c) => CharUnicodeInfo.GetUnicodeCategory(c) is
+        UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark
+        or UnicodeCategory.Format or UnicodeCategory.PrivateUse or UnicodeCategory.Surrogate or UnicodeCategory.OtherNotAssigned;
+
+    private static (string Texto, bool CaracteresInvalidos) Enmascarar(string texto, EntradaCanonica entrada)
     {
         var valores = new HashSet<string>(StringComparer.Ordinal)
         {
-            entrada.Torneo.ToLowerInvariant(),
-            entrada.Local.ToLowerInvariant(),
-            entrada.Visitante.ToLowerInvariant(),
-            entrada.Estado.ToLowerInvariant(),
+            Nfc(entrada.Torneo).ToLowerInvariant(),
+            Nfc(entrada.Local).ToLowerInvariant(),
+            Nfc(entrada.Visitante).ToLowerInvariant(),
+            Nfc(entrada.Estado).ToLowerInvariant(),
             "w.o.",
         };
-        foreach (var g in entrada.Goles) valores.Add(g.Jugador.ToLowerInvariant());
-        foreach (var a in entrada.Autogoles) valores.Add(a.Jugador.ToLowerInvariant());
-        foreach (var t in entrada.Tarjetas) valores.Add(t.Jugador.ToLowerInvariant());
+        foreach (var g in entrada.Goles) valores.Add(Nfc(g.Jugador).ToLowerInvariant());
+        foreach (var a in entrada.Autogoles) valores.Add(Nfc(a.Jugador).ToLowerInvariant());
+        foreach (var t in entrada.Tarjetas) valores.Add(Nfc(t.Jugador).ToLowerInvariant());
         valores.Remove(string.Empty);
 
         // De la más larga a la más corta; a igual longitud, en orden ordinal.
         var ordenados = valores.ToList();
         ordenados.Sort(static (x, y) => x.Length != y.Length ? y.Length.CompareTo(x.Length) : string.CompareOrdinal(x, y));
 
-        // Un carácter del propio texto que se parezca al marcador no puede hacerse pasar por un valor enmascarado.
-        var original = texto.Replace(Marcador, ' ');
+        var original = Nfc(texto);
         var minuscula = original.ToLowerInvariant();
 
         var salida = new StringBuilder(original.Length);
+        var invalidos = false;
         var i = 0;
         while (i < original.Length)
         {
@@ -135,12 +157,16 @@ public static class VerificadorDeResumen
             }
             else
             {
-                salida.Append(original[i]);
+                // R-11 b: solo cuentan los caracteres fuera de una aparición enmascarada, vistos en el texto NFC original.
+                // R-02: solo el enmascarado produce un marcador; un carácter igual que ya venía en el texto es un separador inerte.
+                var c = original[i];
+                if (EsCaracterInvalido(c)) invalidos = true;
+                salida.Append(c == Marcador ? ' ' : c);
                 i++;
             }
         }
 
-        return salida.ToString();
+        return (salida.ToString(), invalidos);
     }
 
     private static int LongitudDelValorEn(string minuscula, int posicion, List<string> valores)

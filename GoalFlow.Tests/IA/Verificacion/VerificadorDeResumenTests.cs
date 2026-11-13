@@ -253,7 +253,7 @@ public class VerificadorDeResumenTests
 
         // Con un nombre real, la negación no se aplica; con el carácter de uso privado, sí debe aplicarse.
         Assert.Empty(Reglas("No hubo ninguna tarjeta de Jugador Tres.", entrada));
-        Assert.Equal(["V6"], Reglas("No hubo ninguna tarjeta de \uE000.", entrada));
+        Assert.Equal(["V6", "V8"], Reglas("No hubo ninguna tarjeta de \uE000.", entrada));
     }
 
     // ---- T-15 (R-02, R-11 b): NFC y caracteres invisibles. Los invisibles se escriben con escapes \u, nunca literales. ----
