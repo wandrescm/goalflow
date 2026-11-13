@@ -220,6 +220,7 @@ public class RellenoDeResumenesTests(BaseDeAislamiento db)
             await Jugado(db, LigaA);
             await primero.IniciarAsync();
             await Esperar(async () => (await Entregas(primero, A01)).Count == 1);
+            await EsperarElFinDelBackfillAsync(primero);
             Assert.Contains(registros.Entradas, e => e.Nivel == LogLevel.Information && e.Texto.Contains("creadas 1") && e.Texto.Contains("ya presentes 0"));
         }
 
@@ -227,6 +228,7 @@ public class RellenoDeResumenesTests(BaseDeAislamiento db)
         await segundo.IniciarAsync();
         await Esperar(() => Task.FromResult(registros.Entradas.Count(e => e.Texto.Contains("creadas 0") && e.Texto.Contains("ya presentes 1")) >= 1));
 
+        await EsperarElFinDelBackfillAsync(segundo);
         Assert.Single(await Entregas(segundo, A01));
     }
 
@@ -269,6 +271,10 @@ public class RellenoDeResumenesTests(BaseDeAislamiento db)
         public Task<IReadOnlyList<PartidoConResultado>> ListarAsync(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("MENSAJE-QUE-NO-SE-REGISTRA");
     }
+
+    /// <summary>El backfill escribe su línea de conteos después de crear la fila: se espera al servicio antes de leer el registro.</summary>
+    private static Task EsperarElFinDelBackfillAsync(AnfitrionDeIa host) =>
+        host.Services.GetServices<IHostedService>().OfType<RellenoAlArrancar>().Single().ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(30));
 
     private static async Task Esperar(Func<Task<bool>> condicion)
     {
