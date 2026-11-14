@@ -324,4 +324,18 @@ public class VerificadorDeResumenTests
         Assert.True(primero >= 0 && texto.IndexOf(de, primero + 1, StringComparison.Ordinal) < 0, $"'{de}' debe aparecer una vez");
         return texto.Replace(de, a, StringComparison.Ordinal);
     }
+
+    // ---- T-16 (R-04): números que en A solo existen como suma (Spec 008 C-16) ----
+
+    [Theory]
+    [InlineData("a_F3_seis_es_3_mas_3", "F3", "En la jornada 3 de la fase 1 del Torneo Uno, Equipo Uno y Equipo Dos igualaron 3 a 3 en un partido de seis goles.")]
+    [InlineData("b_F5_cuatro_es_2_mas_1_mas_1", "F5", "En la jornada 3 de la fase 1 del Torneo Uno, Equipo Uno y Equipo Dos igualaron 0 a 0, con cuatro tarjetas informadas en total.")]
+    public void T16_un_numero_que_en_A_solo_existe_como_suma_se_aprueba(string caso, string fixture, string texto)
+    {
+        Assert.NotEmpty(caso);
+
+        var resultado = VerificadorDeResumen.Verificar(texto, CorpusV1.Entrada(fixture));
+
+        Assert.True(resultado.Aprobado, $"{caso}: reglas {string.Join(",", resultado.Reglas)}");
+    }
 }
