@@ -221,7 +221,7 @@ public class VerificadorDeResumenTests
     // ---- R-01 y R-02: forma del resultado y enmascarado ----
 
     [Fact]
-    public void R01_las_reglas_van_sin_repetir_y_en_el_orden_V1_a_V7()
+    public void R01_las_reglas_van_sin_repetir_y_en_el_orden_V1_a_V8()
     {
         var entrada = EntradaCanonica.Construir(DatosDePrueba.Vacio());
 

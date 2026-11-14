@@ -24,7 +24,7 @@ public static class VerificadorDeResumen
     public const string V8 = "V8";
 
     // El marcador de un valor enmascarado: un carácter de uso privado, que no es letra, dígito ni terminador (R-02).
-    private const char Marcador = '';
+    private const char Marcador = '\uE000';
 
     // R-05
     private static readonly HashSet<string> Inicios = new(StringComparer.Ordinal)
