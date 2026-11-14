@@ -1,6 +1,6 @@
 # Spec 008: A-01 deterministic verifier and derived publication
 
-- **Status:** Approved (2026-11-13, H15), by the owner after review v1 (C-09 option 1; corrections H1 to H5). **v2 after Phase A (Phase A.2, same day): the selector moves to `GoalFlow.Application.IA` (C-14), the text and the masked values are compared in NFC, and rule V8 rejects invisible, combining and private-use characters (C-15); the corpus verdicts do not change and `VersionDelVerificador` stays `v1` because v1 was never released.** **v3 after the mutation audit (Phase B.2, same day): M6 and M12 survived because no test wrote a number that exists in A only as a sum; T-16 covers both sums of R-04 (C-16). No rule changes.** Built from the owner's decisions of 2026-11-13 on design challenges 1 to 4 and the Control 1 (A-02 removed from this Spec), and from the labeled corpus of the 2026-11-12 smoke test.
+- **Status:** Implemented (2026-11-13). PR #20 merged as `3d69437` (CI #59 green: build-test, docker-build and deploy; Render *Live* with `3d69437`; `/health` 200). No migration and no configuration change; `IA:Habilitada` stays false in production, so the verifier does not run there until IA is enabled with real data. Suite at `c3d94fb`: 877 passed, 0 failed, 0 skipped (smoke-test filter). Mutation audit: 13 mutations, 11 killed in Phase B and 2 (M6, M12) killed after Phase B.2 by T-16. History: v1 approved after the owner's review (C-09 option 1; corrections H1 to H5); v2 after Phase A (Phase A.2: selector placement, NFC and rule V8; C-14, C-15); v3 after the Phase B audit (T-16, because M6 and M12 survived; C-16). All on 2026-11-13.
 - **Date:** 2026-11-13
 - **Related:** ADR-12 (amended v5 with this Spec: §2.3, §2.6, §2.9, §2.11, C-26 to C-30), Spec 007 (R-01, R-16, R-17, R-21, R-22, R-24, R-27; T-21 b corpus), ADR-02 (at-least-once delivery), ADR-03 (module `IA`)
 - **Effort:** Medium (Sonnet) for the verifier, the selector and the consumer change
@@ -122,12 +122,12 @@ A model text is stored only if the deterministic verifier approves it against th
 
 ## 8. Definition of done
 
-- [ ] All tests above pass and none was modified to make it pass; Spec 007 tests pass, with only the test-infrastructure change and the two assertions authorized in C-13.
-- [ ] Every requirement maps to at least one test (§9).
-- [ ] No new warnings; no secrets in the diff; no migration; no new package; no raw SQL.
-- [ ] ADR-12 amended (v5); `CLAUDE.md` "Funciones de IA" updated.
-- [ ] PR description contains the validation table, the evaluation matrix of T-02 and the mutation audit.
-- [ ] `IA:Habilitada` stays false in production.
+- [x] All tests above pass and none was modified to make it pass; Spec 007 tests pass, with only the test-infrastructure change and the two assertions authorized in C-13. One assertion of an extra test written in Phase A (`R02_un_caracter_de_uso_privado_en_el_texto_no_se_hace_pasar_por_un_valor_enmascarado`) changed from `["V6"]` to `["V6", "V8"]` with the chat's authorization, because it encoded the placeholder replacement that C-15 retired; the first value had hidden a verifier defect, fixed in the same commit.
+- [x] Every requirement maps to at least one test (§9).
+- [x] No new warnings; no secrets in the diff; no migration; no new package; no raw SQL.
+- [x] ADR-12 amended (v5); `CLAUDE.md` "Funciones de IA" updated.
+- [x] PR description contains the validation table, the evaluation matrix of T-02 and the mutation audit.
+- [x] `IA:Habilitada` stays false in production.
 
 ### 8.1 Delivery, evidence and audit
 
@@ -156,16 +156,20 @@ One PR on `feat/summary-verifier`, commits in this order:
 | M12 | A excludes the card total. | The number set is exactly R-04 |
 | M13 | The negation branch of V6 with cards never fires. | Denying cards that were shown is rejected |
 
-## 9. Validation (filled in the closing commit)
+## 9. Validation
+
+Evidence: PR #20 (description: validation table, red and green per commit, T-02 matrices, Phase A.2, mutation audit and Phase B.2). Suite at `c3d94fb`: 877 passed, 0 failed, 0 skipped.
 
 | Requirement | Test | Result | Evidence |
 | --- | --- | --- | --- |
-| R-01 to R-11 b | T-01, T-03, T-05 to T-09, T-15, T-16 | | |
-| R-12 | T-04 | | |
-| R-13 to R-16 | T-10 to T-12 | | |
-| R-17, R-18 | T-13 | | |
-| R-19, R-20 | T-01, T-02 | | |
-| R-21 | T-14 | | |
+| R-01 to R-11 b | T-01, T-03, T-05 to T-09, T-15, T-16 | Pass | 14 of 14 real verdicts and 12 of 12 mutations equal Appendix A on the first run; T-15 red 4 of 6 before V8 (a, b, c, e), green 6 of 6 after; T-16 initial green, red under M6 (a) and M12 (b) |
+| R-12 | T-04 | Pass | 18 Spec 007 sheets and 200 generated sheets (fixed seed, Spec 006 invariants asserted): 100 % approved |
+| R-13 to R-16 | T-10 to T-12 | Pass | Red before the consumer change ("No exception was thrown"); 2 calls with byte-identical requests; 3 rejected calls and a fourth attempt without a call that stores the draft; no marker in any log entry |
+| R-17, R-18 | T-13 | Pass | Red 6 of 6 against a skeleton, then green |
+| R-19, R-20 | T-01, T-02 | Pass | Real corpus: false positives 0, false negatives 0. Mutations: false positive 1 (a11), false negatives 2 (a4, a8), as pinned |
+| R-21 | T-14 | Pass | Production types and a canary with `Regex` only in a method body |
+
+**Mutation audit (Phase B, base `d5a4330`, 875 passing).** M1, M2, M3, M4, M5, M7, M8, M9, M10, M11 and M13 killed; M6 and M12 survived with 0 failures and were killed after Phase B.2 by T-16. The owner's frozen predictions: M1 3 (observed 3), M2 55 (observed 57: 11 Spec 007 tests on the success path, not 9), M3 2 (observed 2). Direct killers: M1 T-10, M2 T-05, M3 T-06 (`null`), M4 T-01 (M6), M5 T-13 d, M7 T-10, M8 T-11, M9 T-08, M10 T-15 d, M11 the R-02 placeholder test, M13 T-06 (cards shown).
 
 ## 10. Risks and open items
 
