@@ -27,11 +27,13 @@ public class RegistroYArranqueDeIaTests(BaseDeAislamiento db)
         var sufijo = " MARCA-N-7";
         var p = await PartidoSembrado.CrearAsync(db, LigaA, sufijo);
         await p.GuardarAsync(PlanillaSembrada.ConGoleador());
-        var textoConMarca = "MARCA-T-5 " + ControlDeGenerador.TextoValido;
 
         // 1) Un éxito con exceso de costo: llegan advertencias y datos de uso.
-        host.Control.AlGenerar = _ => Task.FromResult(
-            new RespuestaGenerada(ControlDeGenerador.Json(textoConMarca), "end_turn", 20_000, 400));
+        host.Control.AlGenerar = _ =>
+        {
+            var textoConMarca = ControlDeGenerador.TextoValidoPara(host.Control.SolicitudesDeGeneracion[^1].EntradaCanonica) + " marcatcinco.";
+            return Task.FromResult(new RespuestaGenerada(ControlDeGenerador.Json(textoConMarca), "end_turn", 20_000, 400));
+        };
         await host.ProcesarAsync(p, 1);
 
         // 2) Una llamada incierta cuya excepción trae un mensaje con marca, y un error de respuesta, y una salida inválida.
@@ -50,7 +52,7 @@ public class RegistroYArranqueDeIaTests(BaseDeAislamiento db)
 
         var todo = string.Join('\n', registros.Entradas.Select(e => e.Texto));
         Assert.DoesNotContain("MARCA-N-7", todo); // nombres
-        Assert.DoesNotContain("MARCA-T-5", todo); // texto generado
+        Assert.DoesNotContain("marcatcinco", todo); // texto generado
         Assert.DoesNotContain("MARCA-K-9", todo); // clave
         Assert.DoesNotContain("MARCA-E-", todo); // mensajes de excepción
         Assert.DoesNotContain("Jugador Uno", todo);

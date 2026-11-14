@@ -47,8 +47,48 @@ public sealed class RelojFijo(DateTimeOffset inicio) : TimeProvider
 /// <summary>El estado compartido del generador falso de un anfitrión: qué responde, qué recibió y qué observó (Spec 007 §4).</summary>
 public sealed class ControlDeGenerador
 {
+    /// <summary>
+    /// El <b>centinela</b> del texto válido (Spec 008 C-13): cuando una respuesta guionizada trae exactamente este texto, el
+    /// generador falso devuelve en su lugar <see cref="TextoValidoPara"/> de la solicitud recibida, que el verificador v1 aprueba.
+    /// Su literal no se usa como salida real: "2-1" y los dos goleadores no coinciden con la planilla por defecto. Cualquier otro
+    /// texto guionizado se devuelve tal cual.
+    /// </summary>
     public const string TextoValido =
         "Equipo Uno venció 2-1 a Equipo Dos con goles de Jugador Uno y Jugador Dos en un partido muy disputado de principio a fin.";
+
+    private readonly List<SolicitudDeGeneracion> _solicitudesDeGeneracion = [];
+
+    /// <summary>Cada <see cref="SolicitudDeGeneracion"/> que llegó a <c>GenerarAsync</c>, en orden (Spec 008 C-13).</summary>
+    public IReadOnlyList<SolicitudDeGeneracion> SolicitudesDeGeneracion
+    {
+        get
+        {
+            lock (_solicitudesDeGeneracion) return [.. _solicitudesDeGeneracion];
+        }
+    }
+
+    internal void AnotarSolicitudDeGeneracion(SolicitudDeGeneracion solicitud)
+    {
+        lock (_solicitudesDeGeneracion) _solicitudesDeGeneracion.Add(solicitud);
+    }
+
+    /// <summary>
+    /// Un texto que el verificador v1 aprueba para esa entrada canónica: solo usa su torneo, fase, jornada, equipos y marcador.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">La entrada no trae marcador, o el texto mide menos de 80 caracteres.</exception>
+    public static string TextoValidoPara(string entradaCanonica)
+    {
+        using var documento = JsonDocument.Parse(entradaCanonica);
+        var raiz = documento.RootElement;
+        if (!raiz.TryGetProperty("marcador", out var marcador) || marcador.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("La entrada canónica no trae marcador: no hay texto válido para ella.");
+
+        var texto = $"En la jornada {raiz.GetProperty("jornada").GetInt32()} de la fase {raiz.GetProperty("fase").GetInt32()} "
+            + $"del {raiz.GetProperty("torneo").GetString()}, {raiz.GetProperty("local").GetString()} y {raiz.GetProperty("visitante").GetString()} "
+            + $"jugaron un partido que terminó {marcador.GetProperty("local").GetInt32()} a {marcador.GetProperty("visitante").GetInt32()}.";
+        if (texto.Length < 80) throw new InvalidOperationException("El texto válido mide menos de 80 caracteres.");
+        return texto;
+    }
 
     private int _conteos;
     private int _generaciones;
@@ -95,10 +135,16 @@ public sealed class GeneradorFalso(ControlDeGenerador control, GoalFlowDbContext
         return control.TokensContados(solicitud);
     }
 
-    public Task<RespuestaGenerada> GenerarAsync(SolicitudDeGeneracion solicitud, CancellationToken cancellationToken)
+    public async Task<RespuestaGenerada> GenerarAsync(SolicitudDeGeneracion solicitud, CancellationToken cancellationToken)
     {
         Observar();
-        return control.AlGenerar(control.AnotarGeneracion());
+        control.AnotarSolicitudDeGeneracion(solicitud);
+        var respuesta = await control.AlGenerar(control.AnotarGeneracion());
+
+        // C-13: el centinela se reemplaza por un texto que el verificador aprueba para esta solicitud; los demás textos, tal cual.
+        return respuesta.Texto == ControlDeGenerador.Json(ControlDeGenerador.TextoValido)
+            ? respuesta with { Texto = ControlDeGenerador.Json(ControlDeGenerador.TextoValidoPara(solicitud.EntradaCanonica)) }
+            : respuesta;
     }
 
     private void Observar()

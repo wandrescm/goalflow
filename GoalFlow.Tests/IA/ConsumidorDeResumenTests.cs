@@ -491,7 +491,7 @@ public class ConsumidorDeResumenTests(BaseDeAislamiento db)
 
         Assert.Equal([1, 2], (await host.LlamadasDe(p)).Select(l => l.Numero));
         var resumen = Assert.Single(await host.ResumenesDe(p));
-        Assert.Equal(("Modelo", "PorVerificar", ControlDeGenerador.TextoValido), (resumen.Origen, resumen.Estado, resumen.Texto));
+        Assert.Equal(("Modelo", "PorVerificar", ControlDeGenerador.TextoValidoPara(host.Control.SolicitudesDeGeneracion[^1].EntradaCanonica)), (resumen.Origen, resumen.Estado, resumen.Texto));
     }
 
     // ---- T-18 (R-18) ----
