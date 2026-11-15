@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GoalFlow.Application.Ligas;
 using GoalFlow.Application.Torneos;
 using GoalFlow.Domain.Torneos;
 
@@ -31,14 +32,43 @@ public static class ImportacionDeTorneoEndpoint
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     public sealed record PeticionDePartido(int Fase, int Jornada, string? Local, string? Visitante, string? ProgramadoEn, bool Cancelado);
 
+    // Reglamento (Spec 009 R-05): mismo contrato estricto. Los miembros anulables permiten distinguir «ausente» de «cero»:
+    // el validador del dominio rechaza un miembro ausente, nunca le pone un valor por defecto (R-06 i).
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    public sealed record PeticionDePuntos(int? Victoria, int? Empate, int? Derrota);
+
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    public sealed record PeticionDeDesempate(List<string?>? Criterios, bool? DirectoRecursivo);
+
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    public sealed record PeticionDeFairPlay(int? Amarilla, int? Azul, int? Roja);
+
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    public sealed record PeticionDeAdjudicacionDeMotivo(
+        int? PuntosGanador, int? PuntosPerdedor, int? PuntosEmpate, int? DeduccionPerdedor, int? DeduccionEmpate,
+        bool? CuentaComoJugado, bool? GolesOficialesEnTabla, bool? GolesOficialesEnValla,
+        bool? GolesDeportivosEnGoleadores, bool? TarjetasEnFairPlay);
+
+    // Las llaves son los motivos de adjudicación; cualquier otra es un miembro desconocido y da 400 (R-06).
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    public sealed record PeticionDeAdjudicacion(
+        PeticionDeAdjudicacionDeMotivo? WalkOver, PeticionDeAdjudicacionDeMotivo? Sancion, PeticionDeAdjudicacionDeMotivo? Otro);
+
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    public sealed record PeticionDeReglamento(
+        string? Estado, PeticionDePuntos? Puntos, PeticionDeDesempate? Desempate, PeticionDeFairPlay? FairPlay,
+        PeticionDeAdjudicacion? Adjudicacion);
+
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     public sealed record PeticionDeTorneo(
-        string? Nombre, List<PeticionDeFase?>? Fases, List<PeticionDeEquipo?>? Equipos, List<PeticionDePartido?>? Partidos);
+        string? Nombre, List<PeticionDeFase?>? Fases, List<PeticionDeEquipo?>? Equipos, List<PeticionDePartido?>? Partidos,
+        PeticionDeReglamento? Reglamento = null);
 
     public static RouteGroupBuilder MapImportacionDeTorneo(this RouteGroupBuilder admin)
     {
         admin.MapPut("/torneos/{codigo}", async (
-            string codigo, HttpContext http, ImportacionDeTorneo importacion, CancellationToken cancellationToken) =>
+            string codigo, HttpContext http, ImportacionDeTorneo importacion, IIdentidadAutenticada identidad,
+            CancellationToken cancellationToken) =>
         {
             if (!FormatoDeCodigos.EsValido(codigo)) return Results.BadRequest();
 
@@ -46,12 +76,14 @@ public static class ImportacionDeTorneoEndpoint
                 http.Request.Body, http.Request.ContentLength, LimiteDelCuerpo, cancellationToken);
             if (cuerpo is null) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
-            var fixture = Interpretar(cuerpo);
-            if (fixture is null) return Results.BadRequest();
+            var interpretado = Interpretar(cuerpo);
+            if (interpretado is null) return Results.BadRequest();
+            var (fixture, reglamento) = interpretado.Value;
 
             try
             {
-                return Results.Ok(await importacion.EjecutarAsync(codigo, fixture, cancellationToken));
+                return Results.Ok(await importacion.EjecutarAsync(
+                    codigo, fixture, reglamento, identidad.UsuarioId!.Value, cancellationToken));
             }
             catch (FixtureInvalidoException ex)
             {
@@ -71,8 +103,8 @@ public static class ImportacionDeTorneoEndpoint
         return admin;
     }
 
-    /// <returns>El fixture, o <c>null</c> si el cuerpo no es JSON válido del contrato (400).</returns>
-    private static FixtureDescripcion? Interpretar(byte[] cuerpo)
+    /// <returns>El fixture y el reglamento opcional, o <c>null</c> si el cuerpo no es JSON válido del contrato (400).</returns>
+    private static (FixtureDescripcion Fixture, ReglamentoDescripcion? Reglamento)? Interpretar(byte[] cuerpo)
     {
         PeticionDeTorneo? peticion;
         try
@@ -92,7 +124,9 @@ public static class ImportacionDeTorneoEndpoint
             || equipos.Any(e => e!.Jugadores?.Any(j => j is null) == true))
             return null;
 
-        return new FixtureDescripcion(
+        if (peticion.Reglamento?.Desempate?.Criterios?.Any(c => c is null) == true) return null;
+
+        var fixture = new FixtureDescripcion(
             peticion.Nombre ?? string.Empty,
             [.. fases.Select(f => new FaseDescripcion(f!.Orden, f.Tipo ?? nameof(TipoDeFase.TodosContraTodos), f.Vueltas))],
             [.. equipos.Select(e => new EquipoDescripcion(
@@ -102,5 +136,22 @@ public static class ImportacionDeTorneoEndpoint
                 [.. (e.Jugadores ?? []).Select(j => new JugadorDescripcion(j!.Codigo ?? string.Empty, j.Nombre ?? string.Empty))]))],
             [.. partidos.Select(p => new PartidoDescripcion(
                 p!.Fase, p.Jornada, p.Local ?? string.Empty, p.Visitante ?? string.Empty, p.ProgramadoEn, p.Cancelado))]);
+
+        return (fixture, peticion.Reglamento is { } r ? Reglamento(r) : null);
     }
+
+    private static ReglamentoDescripcion Reglamento(PeticionDeReglamento r) => new(
+        r.Estado,
+        r.Puntos is { } p ? new PuntosDescripcion(p.Victoria, p.Empate, p.Derrota) : null,
+        r.Desempate is { } d ? new DesempateDescripcion(d.Criterios is null ? null : [.. d.Criterios.Select(c => c!)], d.DirectoRecursivo) : null,
+        r.FairPlay is { } f ? new FairPlayDescripcion(f.Amarilla, f.Azul, f.Roja) : null,
+        r.Adjudicacion is { } a
+            ? new AdjudicacionDescripcion(Motivo(a.WalkOver), Motivo(a.Sancion), Motivo(a.Otro))
+            : null);
+
+    private static AdjudicacionDeMotivoDescripcion? Motivo(PeticionDeAdjudicacionDeMotivo? m) => m is null
+        ? null
+        : new AdjudicacionDeMotivoDescripcion(
+            m.PuntosGanador, m.PuntosPerdedor, m.PuntosEmpate, m.DeduccionPerdedor, m.DeduccionEmpate,
+            m.CuentaComoJugado, m.GolesOficialesEnTabla, m.GolesOficialesEnValla, m.GolesDeportivosEnGoleadores, m.TarjetasEnFairPlay);
 }

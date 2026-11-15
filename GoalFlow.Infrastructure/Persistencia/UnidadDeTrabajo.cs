@@ -1,6 +1,7 @@
 using GoalFlow.Application.Ligas;
 using GoalFlow.Application.Persistencia;
 using GoalFlow.Application.Tenancy;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoalFlow.Infrastructure.Persistencia;
@@ -14,6 +15,15 @@ public class UnidadDeTrabajo(
         InterceptorDeTransacciones.ExigirContexto(tenantContext, identidad);
 
         return new Transaccion(await contexto.Database.BeginTransactionAsync(cancellationToken));
+    }
+
+    public async Task<ITransaccion> IniciarLecturaConsistenteAsync(CancellationToken cancellationToken)
+    {
+        InterceptorDeTransacciones.ExigirContexto(tenantContext, identidad);
+
+        // La sobrecarga de nivel de aislamiento de EF Core, sin SQL crudo (Spec 009 R-33). La foto de REPEATABLE READ la toma
+        // la primera sentencia de la transacción, el set_config del interceptor, antes de cualquier lectura del puerto.
+        return new Transaccion(await contexto.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken));
     }
 
     private sealed class Transaccion(IDbContextTransaction transaccion) : ITransaccion

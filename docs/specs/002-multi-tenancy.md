@@ -213,7 +213,7 @@ Filled at closing, after the production check. During review, the evidence lived
 
 - **Temporary exception: no rate limit on `GET /{slug}/equipos`** (decided by the owner on 2026-10-30). `CLAUDE.md` requires a rate limit on public endpoints; it is deferred because a per-IP limit is only correct once the real client IP behind Render and Cloudflare is verified (ADR-05 R-15).
   - **Owner:** the project owner.
-  - **Deadline:** before the frontend is public, and no later than 2026-11-16.
+  - **Deadline:** before the frontend is public, and no later than 2026-11-16. **Amended on 2026-11-14 (Spec 009 C-21, owner's decision D6):** the exception runs until Spec 010 implements the rate limit and it is verified in production; the deadline is "before the frontend is public". The statistics endpoints of Spec 009 are not covered by this exception: they stay disabled in production (Spec 009 R-37) until Spec 010 is verified, and Spec 010 protects every public endpoint, this one included.
   - **Pending tests:** (1) the API uses the real client IP in Render, (2) a client cannot evade or redirect the limit with a forged `X-Forwarded-For`, (3) exceeding the limit returns HTTP `429`.
   - Until then, the endpoint's data is public and small, and the database pool (`Maximum Pool Size`) bounds the load it can put on the database.
 

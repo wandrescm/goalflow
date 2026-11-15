@@ -750,6 +750,60 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
                         });
                 });
 
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.ReglamentoTorneo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Contenido")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("contenido");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("estado");
+
+                    b.Property<DateTimeOffset>("GuardadoEn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("guardado_en")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("GuardadoPor")
+                        .HasColumnType("uuid")
+                        .HasColumnName("guardado_por");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TorneoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("torneo_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TorneoId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_reglamentos_torneo_tenant_torneo_version");
+
+                    b.ToTable("reglamentos_torneo", "goalflow", t =>
+                        {
+                            t.HasCheckConstraint("ck_reglamentos_torneo_contenido", "jsonb_typeof(contenido) = 'object'");
+
+                            t.HasCheckConstraint("ck_reglamentos_torneo_estado", "estado in ('Provisional', 'Confirmado')");
+
+                            t.HasCheckConstraint("ck_reglamentos_torneo_version", "version >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoalFlow.Domain.Torneos.Tarjeta", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1095,6 +1149,17 @@ namespace GoalFlow.Infrastructure.Persistencia.Migraciones
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_planillas_partidos");
+                });
+
+            modelBuilder.Entity("GoalFlow.Domain.Torneos.ReglamentoTorneo", b =>
+                {
+                    b.HasOne("GoalFlow.Domain.Torneos.Torneo", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TorneoId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reglamentos_torneo_torneos");
                 });
 
             modelBuilder.Entity("GoalFlow.Domain.Torneos.Tarjeta", b =>

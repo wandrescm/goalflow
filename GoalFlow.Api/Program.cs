@@ -1,4 +1,5 @@
 using GoalFlow.Api.Hosting;
+using GoalFlow.Application.Estadisticas;
 using GoalFlow.Application.Torneos;
 using GoalFlow.Infrastructure.IA;
 using GoalFlow.Infrastructure.Mensajeria;
@@ -33,6 +34,11 @@ builder.Services.AddScoped<IAlmacenDePlanilla, AlmacenDePlanilla>();
 builder.Services.AddScoped<GuardarPlanilla>();
 builder.Services.AddScoped<ConsultaDePlanilla>();
 
+// Estadísticas (Spec 009): los casos de uso se registran siempre; los endpoints públicos, solo con el interruptor (R-37).
+builder.Services.AddScoped<ConsultaDePosiciones>();
+builder.Services.AddScoped<ConsultaDeGoleadores>();
+builder.Services.AddScoped<ConsultaDeValla>();
+
 var app = builder.Build();
 
 app.UseGoalFlowForwardedHeaders();
@@ -41,6 +47,9 @@ app.UseGoalFlowCors();
 app.MapGet("/health", () => Results.Ok());
 app.MapGoalFlowEquipos();
 app.MapGoalFlowAdmin();
+
+// Apagado por defecto en todo ambiente (R-37): sin interruptor, las tres rutas no existen y responden 404.
+if (EstadisticasEndpoints.Habilitado(app.Configuration)) app.MapGoalFlowEstadisticas();
 
 app.Run();
 

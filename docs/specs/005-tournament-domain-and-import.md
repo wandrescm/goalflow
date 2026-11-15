@@ -1,6 +1,6 @@
 # Spec 005: Tournament domain model, fixture import and query-safety rules
 
-- **Status:** Implemented (2026-11-07). PR A #12 (merge `d0a5354`) and PR B #13 (merge `726d664`), verified in production on 2026-11-07
+- **Status:** Implemented (2026-11-07). PR A #12 (merge `d0a5354`) and PR B #13 (merge `726d664`), verified in production on 2026-11-07. **Amended by Spec 009 (2026-11-14):** R-14 (the body accepts an optional `reglamento`), R-19 (the response adds the collection `reglamento`), R-20 (an identical `reglamento` writes nothing), R-21 (omitting stored rules is a `409` conflict `reglamento`) and R-25 (the log may add the rules version and state); see Spec 009 §3.2.
 - **Date:** 2026-11-06 (S3D1, H09; revised the same day after the owner's review: R-05, R-06, R-21, R-24, R-25, R-32, R-36; R-38 to R-40; T-05, T-26, T-29 to T-31; C-09, C-10, C-13 to C-15; §8 delivery in two PRs). PR A mutation audit (2026-11-06): R-29, R-30; T-19, T-20; C-17, C-18. PR B review and mutation audit (2026-11-07): R-35; T-11, T-15, T-33; C-19 to C-24. Second review: R-13 (f), R-14, R-18, R-19, R-33, R-39; T-05, T-19, T-24, T-29, T-31, T-32; C-15, C-16)
 - **Related:** ADR-06 (tournament domain model), ADR-14 (amended §2.11: keys and relationships), ADR-03 (modules), ADR-01 (Admin routes), Spec 002, Spec 004
 - **Effort:** Medium (Sonnet); the IL scanner of §3.5 may use `opusplan`
