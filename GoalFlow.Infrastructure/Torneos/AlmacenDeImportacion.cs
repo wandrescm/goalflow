@@ -23,6 +23,7 @@ public class AlmacenDeImportacion(GoalFlowDbContext contexto) : IAlmacenDeImport
         var participaciones = new List<Domain.Torneos.EquipoTorneo>();
         var inscripciones = new List<Domain.Torneos.InscripcionJugador>();
         var partidos = new List<Domain.Torneos.Partido>();
+        Domain.Torneos.ReglamentoTorneo? reglamento = null;
         if (torneo is not null)
         {
             var id = torneo.Id;
@@ -30,6 +31,10 @@ public class AlmacenDeImportacion(GoalFlowDbContext contexto) : IAlmacenDeImport
             participaciones = await contexto.EquiposTorneo.Where(p => p.TorneoId == id).ToListAsync(cancellationToken);
             inscripciones = await contexto.InscripcionesJugador.Where(i => i.TorneoId == id).ToListAsync(cancellationToken);
             partidos = await contexto.Partidos.Where(p => p.TorneoId == id).ToListAsync(cancellationToken);
+
+            // Spec 009 R-03: el reglamento vigente es la versión más alta.
+            reglamento = await contexto.ReglamentosTorneo
+                .Where(r => r.TorneoId == id).OrderByDescending(r => r.Version).FirstOrDefaultAsync(cancellationToken);
         }
 
         var equiposDelTorneo = participaciones.Select(p => p.EquipoId).ToList();
@@ -41,7 +46,7 @@ public class AlmacenDeImportacion(GoalFlowDbContext contexto) : IAlmacenDeImport
             .Where(j => codigosDeJugador.Contains(j.Codigo) || jugadoresDelTorneo.Contains(j.Id))
             .ToListAsync(cancellationToken);
 
-        return new EstadoGuardado(torneo, fases, equipos, jugadores, participaciones, inscripciones, partidos);
+        return new EstadoGuardado(torneo, fases, equipos, jugadores, participaciones, inscripciones, partidos, reglamento);
     }
 
     public void Agregar<T>(T entidad) where T : class => contexto.Add(entidad);

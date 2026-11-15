@@ -214,6 +214,37 @@ internal static class ConfiguracionDeTorneos
             .HasConstraintName("fk_planillas_partidos").OnDelete(DeleteBehavior.Restrict);
     }
 
+    /// <summary>El nombre del índice único de la versión: el adaptador traduce su 23505 a conflicto (Spec 009 R-09).</summary>
+    public const string IndiceDeVersionDeReglamento = "ux_reglamentos_torneo_tenant_torneo_version";
+
+    public static void ReglamentoTorneo(EntityTypeBuilder<ReglamentoTorneo> reglamento)
+    {
+        reglamento.ToTable("reglamentos_torneo", t =>
+        {
+            t.HasCheckConstraint("ck_reglamentos_torneo_version", "version >= 1");
+            t.HasCheckConstraint("ck_reglamentos_torneo_estado", "estado in ('Provisional', 'Confirmado')");
+            t.HasCheckConstraint("ck_reglamentos_torneo_contenido", "jsonb_typeof(contenido) = 'object'");
+        });
+        reglamento.HasKey(r => r.Id);
+        reglamento.Property(r => r.Id).HasColumnName("id").ValueGeneratedNever();
+        Tenant(reglamento.Property(r => r.TenantId));
+        reglamento.Property(r => r.TorneoId).HasColumnName("torneo_id");
+        reglamento.Property(r => r.Version).HasColumnName("version");
+        reglamento.Property(r => r.Estado).HasColumnName("estado").HasConversion<string>();
+        reglamento.Property(r => r.Contenido).HasColumnName("contenido").HasColumnType("jsonb")
+            .HasConversion(c => ContenidoDeReglamentoJson.Escribir(c), j => ContenidoDeReglamentoJson.Leer(j));
+        reglamento.Property(r => r.GuardadoPor).HasColumnName("guardado_por");
+
+        // La hora de guardado la pone siempre la base, en UTC; la aplicación nunca envía un timestamp.
+        reglamento.Property(r => r.GuardadoEn).HasColumnName("guardado_en")
+            .HasColumnType("timestamp with time zone").HasDefaultValueSql("now()").ValueGeneratedOnAdd();
+
+        reglamento.HasIndex(r => new { r.TenantId, r.TorneoId, r.Version }).IsUnique().HasDatabaseName(IndiceDeVersionDeReglamento);
+        reglamento.HasOne<Torneo>().WithMany().HasForeignKey(r => new { r.TenantId, r.TorneoId })
+            .HasPrincipalKey(t => new { t.TenantId, t.Id })
+            .HasConstraintName("fk_reglamentos_torneo_torneos").OnDelete(DeleteBehavior.Restrict);
+    }
+
     public static void Gol(EntityTypeBuilder<Gol> gol)
     {
         gol.ToTable("goles", t =>

@@ -15,7 +15,8 @@ public sealed record ResultadoDeImportacion(
     ConteoDeColeccion Jugadores,
     ConteoDeColeccion Participaciones,
     ConteoDeColeccion Inscripciones,
-    ConteoDeColeccion Partidos);
+    ConteoDeColeccion Partidos,
+    ConteoDeColeccion Reglamento);
 
 /// <summary>Lo guardado del torneo y del catálogo de la liga que el fixture menciona (Spec 005 R-18).</summary>
 public sealed record EstadoGuardado(
@@ -25,7 +26,8 @@ public sealed record EstadoGuardado(
     IReadOnlyList<Jugador> Jugadores,
     IReadOnlyList<EquipoTorneo> Participaciones,
     IReadOnlyList<InscripcionJugador> Inscripciones,
-    IReadOnlyList<Partido> Partidos);
+    IReadOnlyList<Partido> Partidos,
+    ReglamentoTorneo? Reglamento);
 
 /// <summary>Puerto de almacenamiento del caso de uso. Corre dentro de la transacción de <see cref="IUnidadDeTrabajo"/>.</summary>
 public interface IAlmacenDeImportacion
@@ -48,7 +50,7 @@ public interface IAlmacenDeImportacion
 
 public sealed record ConflictoDeImportacion(string Tipo, string Clave);
 
-/// <summary>El fixture rompe R-12, R-13 o R-17. Lleva todos los errores.</summary>
+/// <summary>El fixture rompe R-12, R-13 o R-17, o el reglamento rompe Spec 009 R-06. Lleva todos los errores, cada uno con su ruta.</summary>
 public class FixtureInvalidoException(IReadOnlyList<ErrorDeFixture> errores)
     : Exception("El fixture no es válido.")
 {
@@ -75,10 +77,17 @@ public class ImportacionDeTorneo(
     ITenantContext tenantContext,
     ILogger<ImportacionDeTorneo> logger)
 {
+    /// <param name="reglamento">El reglamento opcional del cuerpo (Spec 009 R-05); <c>null</c> si no vino.</param>
+    /// <param name="guardadoPor">El <c>sub</c> del Admin autenticado, que se guarda en cada versión nueva del reglamento (R-07).</param>
     public async Task<ResultadoDeImportacion> EjecutarAsync(
-        string codigoDeTorneo, FixtureDescripcion fixture, CancellationToken cancellationToken)
+        string codigoDeTorneo, FixtureDescripcion fixture, ReglamentoDescripcion? reglamento, Guid guardadoPor,
+        CancellationToken cancellationToken)
     {
-        var errores = ValidadorDeFixture.Validar(fixture);
+        // R-06: el reglamento se valida junto con el fixture y se devuelven todos los errores, cada uno con su ruta.
+        var errores = new List<ErrorDeFixture>(ValidadorDeFixture.Validar(fixture));
+        var reglamentoResuelto = reglamento is null ? null : ValidadorDeReglamento.Validar(reglamento);
+        if (reglamentoResuelto is not null)
+            errores.AddRange(reglamentoResuelto.Errores.Select(e => new ErrorDeFixture(e.Ruta, e.Codigo)));
         if (errores.Count > 0) throw new FixtureInvalidoException(errores);
 
         var tenant = tenantContext.Current;
@@ -91,21 +100,28 @@ public class ImportacionDeTorneo(
             cancellationToken);
 
         var conflictos = DetectarConflictos(fixture, guardado);
+
+        // Spec 009 R-07 (e): omitir el reglamento nunca lo borra (Spec 005 R-21).
+        if (reglamento is null && guardado.Reglamento is not null)
+            conflictos.Add(new ConflictoDeImportacion("reglamento", codigoDeTorneo));
         if (conflictos.Count > 0) throw new ConflictoDeImportacionException(conflictos);
 
-        var resultado = Aplicar(codigoDeTorneo, fixture, guardado, tenant);
+        var resultado = Aplicar(codigoDeTorneo, fixture, reglamentoResuelto, guardadoPor, guardado, tenant);
         await almacen.GuardarAsync(cancellationToken);
         await transaccion.ConfirmarAsync(cancellationToken);
 
-        // Nunca nombres de equipos ni de jugadores (R-25).
+        // Nunca nombres de equipos ni de jugadores (R-25), ni el sub de quien guarda (Spec 009 R-10).
+        var versionDelReglamento = (guardado.Reglamento?.Version ?? 0) + resultado.Reglamento.Creados + resultado.Reglamento.Actualizados;
         logger.LogInformation(
-            "Importación de torneo: liga {Liga}, torneo {Torneo}, creados {Creados}, actualizados {Actualizados}, sin cambios {SinCambios}",
-            tenant.Value, codigoDeTorneo, Sumar(resultado, c => c.Creados), Sumar(resultado, c => c.Actualizados), Sumar(resultado, c => c.SinCambios));
+            "Importación de torneo: liga {Liga}, torneo {Torneo}, creados {Creados}, actualizados {Actualizados}, sin cambios {SinCambios}, "
+            + "reglamento versión {VersionDelReglamento} estado {EstadoDelReglamento}",
+            tenant.Value, codigoDeTorneo, Sumar(resultado, c => c.Creados), Sumar(resultado, c => c.Actualizados), Sumar(resultado, c => c.SinCambios),
+            versionDelReglamento, reglamentoResuelto?.Estado?.ToString() ?? guardado.Reglamento?.Estado.ToString() ?? "ninguno");
         return resultado;
     }
 
     private static int Sumar(ResultadoDeImportacion r, Func<ConteoDeColeccion, int> campo) =>
-        new[] { r.Torneo, r.Fases, r.Equipos, r.Jugadores, r.Participaciones, r.Inscripciones, r.Partidos }.Sum(campo);
+        new[] { r.Torneo, r.Fases, r.Equipos, r.Jugadores, r.Participaciones, r.Inscripciones, r.Partidos, r.Reglamento }.Sum(campo);
 
     private static List<ConflictoDeImportacion> DetectarConflictos(FixtureDescripcion fixture, EstadoGuardado guardado)
     {
@@ -221,7 +237,8 @@ public class ImportacionDeTorneo(
     }
 
     private ResultadoDeImportacion Aplicar(
-        string codigoDeTorneo, FixtureDescripcion fixture, EstadoGuardado guardado, Domain.Tenancy.TenantId tenant)
+        string codigoDeTorneo, FixtureDescripcion fixture, ResultadoDeValidacionDeReglamento? reglamento, Guid guardadoPor,
+        EstadoGuardado guardado, Domain.Tenancy.TenantId tenant)
     {
         var torneoConteo = new Contador();
         var fasesConteo = new Contador();
@@ -230,6 +247,7 @@ public class ImportacionDeTorneo(
         var participacionesConteo = new Contador();
         var inscripcionesConteo = new Contador();
         var partidosConteo = new Contador();
+        var reglamentoConteo = new Contador();
 
         // Torneo.
         var torneo = guardado.Torneo;
@@ -348,9 +366,26 @@ public class ImportacionDeTorneo(
             }
         }
 
+        // Reglamento (Spec 009 R-07): la versión más alta es la vigente; una versión nueva solo si el estado o el contenido
+        // difieren. Sin reglamento en el cuerpo no se escribe ni se cuenta nada: el caso (e) ya se rechazó como conflicto.
+        if (reglamento is { Estado: { } estado, Contenido: { } contenido })
+        {
+            if (guardado.Reglamento is not { } vigente)
+            {
+                almacen.Agregar(new ReglamentoTorneo(Guid.CreateVersion7(), tenant, torneo.Id, 1, estado, contenido, guardadoPor));
+                reglamentoConteo.Creado();
+            }
+            else if (vigente.Equivale(estado, contenido)) reglamentoConteo.Resultado(false);
+            else
+            {
+                almacen.Agregar(new ReglamentoTorneo(Guid.CreateVersion7(), tenant, torneo.Id, vigente.Version + 1, estado, contenido, guardadoPor));
+                reglamentoConteo.Resultado(true);
+            }
+        }
+
         return new ResultadoDeImportacion(
             torneoConteo.Valor, fasesConteo.Valor, equiposConteo.Valor, jugadoresConteo.Valor,
-            participacionesConteo.Valor, inscripcionesConteo.Valor, partidosConteo.Valor);
+            participacionesConteo.Valor, inscripcionesConteo.Valor, partidosConteo.Valor, reglamentoConteo.Valor);
     }
 
     private sealed class Contador

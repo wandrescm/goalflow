@@ -43,6 +43,7 @@ public class ConsultasSegurasTests
             ("GoalFlow.Infrastructure.Persistencia.Migraciones.TorneosYPartidos", FamiliaDeConsulta.F4),
             ("GoalFlow.Infrastructure.Persistencia.Migraciones.PlanillaPostPartido", FamiliaDeConsulta.F4),
             ("GoalFlow.Infrastructure.Persistencia.Migraciones.ResumenesDePartido", FamiliaDeConsulta.F4),
+            ("GoalFlow.Infrastructure.Persistencia.Migraciones.ReglamentosDeTorneo", FamiliaDeConsulta.F4),
         };
 
         Assert.True(esperados.SetEquals(encontrados),

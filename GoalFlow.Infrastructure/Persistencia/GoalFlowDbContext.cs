@@ -31,6 +31,7 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
     public DbSet<Planilla> Planillas => Set<Planilla>();
     public DbSet<Gol> Goles => Set<Gol>();
     public DbSet<Tarjeta> Tarjetas => Set<Tarjeta>();
+    public DbSet<ReglamentoTorneo> ReglamentosTorneo => Set<ReglamentoTorneo>();
     public DbSet<ResumenPartido> ResumenesPartido => Set<ResumenPartido>();
     public DbSet<LlamadaIa> LlamadasIa => Set<LlamadaIa>();
     public DbSet<PresupuestoIa> PresupuestosIa => Set<PresupuestoIa>();
@@ -132,6 +133,13 @@ public class GoalFlowDbContext(DbContextOptions<GoalFlowDbContext> options, ITen
         {
             ConfiguracionDeTorneos.Tarjeta(tarjeta);
             tarjeta.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
+        });
+
+        // Reglamento del torneo (Spec 009 R-02): mismo filtro Tenant, y RLS en la misma migración.
+        modelBuilder.Entity<ReglamentoTorneo>(reglamento =>
+        {
+            ConfiguracionDeTorneos.ReglamentoTorneo(reglamento);
+            reglamento.HasQueryFilter(FiltroTenant, e => e.TenantId == TenantActual);
         });
 
         // Módulo IA (Spec 007 R-04): mismo filtro Tenant, y RLS en la misma migración.
