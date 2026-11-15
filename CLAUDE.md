@@ -79,7 +79,15 @@ Estructura (ADR-03, en `docs/adr/`):
 
 - **No subas secretos ni cadenas de conexión al repositorio** (es público). Usa variables de entorno y `dotnet user-secrets` en local.
 - CORS restringido a los orígenes del frontend; límite de frecuencia en endpoints públicos.
-- **Excepción temporal (Spec 002 §10):** `GET /{slug}/equipos` no tiene límite de frecuencia hasta verificar la IP real del cliente en Render (ADR-05 R-15). Responsable: el propietario. Fecha límite: antes de publicar el frontend, a más tardar el 2026-11-16. Pruebas pendientes: IP real, `X-Forwarded-For` falsificado y respuesta `429`. No agregues otro endpoint público sin límite.
+- **Excepción temporal (Spec 002 §10, enmendada por la Spec 009 C-21):** `GET /{slug}/equipos` no tiene límite de frecuencia hasta que la Spec 010 lo implemente y se verifique en producción (ADR-05 R-15). Responsable: el propietario. Fecha límite: antes de publicar el frontend. Pruebas pendientes (Spec 010): IP real, encabezados falsificados y respuesta `429`. No agregues otro endpoint público sin límite.
+- Los endpoints públicos de estadísticas (Spec 009 R-26) solo se mapean si `Estadisticas:EndpointsPublicosHabilitados` es `true`; por defecto es `false` en todos los ambientes y apagados responden `404`. Nunca lo enciendas en un handoff ni en un archivo de configuración versionado: encenderlo en producción es decisión del propietario, después de verificar la Spec 010.
+
+## Estadísticas (Spec 009)
+
+- Posiciones, goleadores y valla se calculan en cada consulta desde la **planilla vigente** de cada partido, sin caché y sin sumar versiones. Cada respuesta lee de una sola foto de la base: transacción `REPEATABLE READ`.
+- El reglamento de cada torneo es dato versionado (`reglamentos_torneo`, sin `UPDATE` ni `DELETE`). Nunca asumas un valor deportivo: si falta una sección, la respuesta es `409 configuracion_pendiente`. `Confirmado` es una declaración del Admin y no cambia ningún cálculo.
+- El cálculo (`GoalFlow.Application.Estadisticas.Calculo`) es puro: sin E/S, sin reloj, sin cultura; todo orden usa comparación ordinal.
+- Los resultados esperados del Apéndice A de la Spec 009 están congelados: si la implementación no coincide, detente; nunca ajustes la regla ni el valor esperado.
 
 ## Funciones de IA (ADR-12, Spec 007)
 
