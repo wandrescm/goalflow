@@ -29,8 +29,9 @@ public static class CalculadoraDeGoleadores
             var cuenta = partido.Estado switch
             {
                 EstadoDePartidoParaEstadisticas.Jugado => partido.Planilla?.MarcadorLocal is not null,
-                EstadoDePartidoParaEstadisticas.Adjudicado =>
-                    AporteDePartido.CuentaParaGoleadores(partido, reglamento ?? throw new InvalidOperationException("El torneo no tiene reglamento.")),
+                // Sin marcador deportivo no aporta goles: no necesita configuración (R-25), ni se mira el reglamento.
+                EstadoDePartidoParaEstadisticas.Adjudicado => partido.Planilla?.MarcadorLocal is not null
+                    && AporteDePartido.CuentaParaGoleadores(partido, reglamento ?? throw new InvalidOperationException("El torneo no tiene reglamento.")),
                 _ => false,
             };
             if (!cuenta || partido.Planilla is not { } planilla) continue;
