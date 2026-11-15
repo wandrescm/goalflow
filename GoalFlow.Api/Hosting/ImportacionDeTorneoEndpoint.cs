@@ -32,7 +32,7 @@ public static class ImportacionDeTorneoEndpoint
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     public sealed record PeticionDePartido(int Fase, int Jornada, string? Local, string? Visitante, string? ProgramadoEn, bool Cancelado);
 
-    // Reglamento (Spec 009 R-05): mismo contrato estricto. Los miembros anulables permiten distinguir Â«ausenteÂ» de Â«ceroÂ»:
+    // Reglamento (Spec 009 R-05): mismo contrato estricto. Los miembros anulables permiten distinguir «ausente» de «cero»:
     // el validador del dominio rechaza un miembro ausente, nunca le pone un valor por defecto (R-06 i).
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     public sealed record PeticionDePuntos(int? Victoria, int? Empate, int? Derrota);
@@ -49,7 +49,7 @@ public static class ImportacionDeTorneoEndpoint
         bool? CuentaComoJugado, bool? GolesOficialesEnTabla, bool? GolesOficialesEnValla,
         bool? GolesDeportivosEnGoleadores, bool? TarjetasEnFairPlay);
 
-    // Las llaves son los motivos de adjudicaciÃ³n; cualquier otra es un miembro desconocido y da 400 (R-06).
+    // Las llaves son los motivos de adjudicación; cualquier otra es un miembro desconocido y da 400 (R-06).
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     public sealed record PeticionDeAdjudicacion(
         PeticionDeAdjudicacionDeMotivo? WalkOver, PeticionDeAdjudicacionDeMotivo? Sancion, PeticionDeAdjudicacionDeMotivo? Otro);
