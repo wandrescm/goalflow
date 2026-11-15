@@ -50,7 +50,8 @@ public sealed class CompuertaDeLecturaConsistente : DbCommandInterceptor
     public override async ValueTask<DbDataReader> ReaderExecutedAsync(
         DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
     {
-        if (Activa.Value && Interlocked.Increment(ref _retenciones) == 1)
+        // Solo los comandos del puerto, que corren dentro de la transacción de lectura: la resolución del slug corre sin ella.
+        if (Activa.Value && command.Transaction is not null && Interlocked.Increment(ref _retenciones) == 1)
         {
             Anotar("puerto-retenido");
             _retenida.TrySetResult();
