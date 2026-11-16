@@ -182,4 +182,159 @@ public class DiagnosticoDeRedTests(BaseDeAislamiento db)
 
         Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
     }
+
+    // ---- T-03 a T-08 (con el interruptor en "true") ----
+
+    private static string[] Cadenas(JsonElement lista) => [.. lista.EnumerateArray().Select(e => e.GetString()!)];
+
+    private static JsonElement Encabezados(Respuesta respuesta) => respuesta.Json.GetProperty("antes").GetProperty("encabezados");
+
+    [Fact]
+    public async Task T03_la_captura_es_anterior_a_los_encabezados_reenviados_y_separa_las_entradas_en_orden()
+    {
+        await using var fabrica = Anfitrion("true");
+
+        var respuesta = await Pedir(fabrica, Ruta, TokenDe(UsuarioU1),
+            ("X-Forwarded-For", ["198.51.100.1, 203.0.113.7"]), ("CF-Connecting-IP", ["203.0.113.9"]));
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
+        var cuerpo = respuesta.Json;
+        Assert.Equal("10.0.0.1", cuerpo.GetProperty("antes").GetProperty("ipDeConexion").GetString());
+        var encabezados = Encabezados(respuesta);
+        Assert.Equal(["198.51.100.1, 203.0.113.7"], Cadenas(encabezados.GetProperty("X-Forwarded-For")));
+        Assert.Equal(["203.0.113.9"], Cadenas(encabezados.GetProperty("CF-Connecting-IP")));
+        Assert.Equal(2, encabezados.EnumerateObject().Count());
+        Assert.Equal(["198.51.100.1", "203.0.113.7"], Cadenas(cuerpo.GetProperty("xForwardedForEntradas")));
+        Assert.Equal("203.0.113.7", cuerpo.GetProperty("despues").GetProperty("ipRemota").GetString());
+    }
+
+    // Caracterización extra del handoff §3 (la ruta se compara sin distinguir mayúsculas), no es una prueba de la Spec.
+    [Fact]
+    public async Task Handoff_la_ruta_se_captura_sin_distinguir_mayusculas()
+    {
+        await using var fabrica = Anfitrion("true");
+
+        var respuesta = await Pedir(fabrica, "/liga-a/ADMIN/Diagnostico/RED", TokenDe(UsuarioU1), ("X-Forwarded-For", ["203.0.113.7"]));
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
+        Assert.Equal("10.0.0.1", respuesta.Json.GetProperty("antes").GetProperty("ipDeConexion").GetString());
+        Assert.Equal(["203.0.113.7"], Cadenas(Encabezados(respuesta).GetProperty("X-Forwarded-For")));
+    }
+
+    [Fact]
+    public async Task T04_dos_instancias_de_X_Forwarded_For_salen_como_dos_elementos_en_orden()
+    {
+        await using var fabrica = Anfitrion("true");
+
+        var respuesta = await Pedir(fabrica, Ruta, TokenDe(UsuarioU1), ("X-Forwarded-For", ["198.51.100.1", "203.0.113.7"]));
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
+        Assert.Equal(["198.51.100.1", "203.0.113.7"], Cadenas(Encabezados(respuesta).GetProperty("X-Forwarded-For")));
+        Assert.Equal(["198.51.100.1", "203.0.113.7"], Cadenas(respuesta.Json.GetProperty("xForwardedForEntradas")));
+    }
+
+    [Fact]
+    public async Task T04_un_valor_de_600_caracteres_vuelve_cortado_a_512()
+    {
+        await using var fabrica = Anfitrion("true");
+
+        var respuesta = await Pedir(fabrica, Ruta, TokenDe(UsuarioU1), ("X-Real-IP", [new string('a', 600)]));
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
+        Assert.Equal([new string('a', 512)], Cadenas(Encabezados(respuesta).GetProperty("X-Real-IP")));
+    }
+
+    [Fact]
+    public async Task T04_nueve_instancias_vuelven_como_ocho_las_primeras_en_orden()
+    {
+        await using var fabrica = Anfitrion("true");
+        string[] nueve = [.. Enumerable.Range(1, 9).Select(i => $"192.0.2.{i}")];
+
+        var respuesta = await Pedir(fabrica, Ruta, TokenDe(UsuarioU1), ("X-Forwarded-For", nueve));
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
+        Assert.Equal(nueve[..8], Cadenas(Encabezados(respuesta).GetProperty("X-Forwarded-For")));
+    }
+
+    [Fact]
+    public async Task T05_la_respuesta_lleva_no_store_y_los_encabezados_que_no_llegaron_no_aparecen()
+    {
+        await using var fabrica = Anfitrion("true");
+
+        var respuesta = await Pedir(fabrica, Ruta, TokenDe(UsuarioU1), ("X-Forwarded-For", ["203.0.113.7"]));
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
+        Assert.Contains("no-store", respuesta.Encabezados.CacheControl.ToString());
+        var encabezados = Encabezados(respuesta);
+        Assert.Equal(["X-Forwarded-For"], encabezados.EnumerateObject().Select(p => p.Name));
+        Assert.False(encabezados.TryGetProperty("CF-Connecting-IP", out _));
+        Assert.All(encabezados.EnumerateObject(), p => Assert.NotEmpty(p.Value.EnumerateArray()));
+    }
+
+    [Fact]
+    public async Task T06_el_cuerpo_no_contiene_el_token_la_cookie_ni_otros_encabezados_ni_ids()
+    {
+        await using var fabrica = Anfitrion("true");
+        var token = TokenDe(UsuarioU1);
+
+        var respuesta = await Pedir(fabrica, Ruta, token,
+            ("Cookie", ["s=abc"]), ("X-Personalizado", ["xyz"]),
+            ("X-Forwarded-For", ["198.51.100.1, 203.0.113.7"]), ("CF-Connecting-IP", ["203.0.113.9"]));
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
+        Assert.Contains("203.0.113.9", respuesta.Cuerpo); // control positivo: los valores de la lista sí pasan
+        Assert.DoesNotContain(token, respuesta.Cuerpo);
+        Assert.DoesNotContain("abc", respuesta.Cuerpo);
+        Assert.DoesNotContain("xyz", respuesta.Cuerpo);
+        Assert.DoesNotContain(UsuarioU1.ToString(), respuesta.Cuerpo, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(LigaA.Value.ToString(), respuesta.Cuerpo, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Authorization", respuesta.Cuerpo, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Cookie", respuesta.Cuerpo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task T07_ninguna_entrada_de_log_contiene_una_IP_ni_un_valor_de_encabezado()
+    {
+        const string centinela = "203.0.113.201";
+        var logs = new CapturaDeLogs();
+        await using var fabrica = Anfitrion("true", logs);
+
+        var respuesta = await Pedir(fabrica, Ruta, TokenDe(UsuarioU1),
+            [.. EncabezadosDeLaLista.Select(nombre => (nombre, new[] { centinela }))]);
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.Estado);
+        Assert.Contains(centinela, respuesta.Cuerpo); // control positivo: el valor pasó por la captura
+        Assert.NotEmpty(logs.Entradas); // control: la captura de logs funciona con los niveles de producción
+        Assert.All(logs.Entradas, entrada =>
+        {
+            Assert.DoesNotContain(centinela, entrada);
+            Assert.DoesNotContain("10.0.0.1", entrada);
+        });
+    }
+
+    private static readonly string[] EncabezadosDeLaLista =
+    [
+        "X-Forwarded-For", "X-Forwarded-Proto", "Forwarded", "X-Real-IP",
+        "CF-Connecting-IP", "CF-Connecting-IPv6", "CF-Pseudo-IPv4", "True-Client-IP",
+    ];
+
+    // Verde inicial: pasa porque la captura no toca otras rutas; su rojo lo dará la auditoría (Fase B).
+    [Fact]
+    public async Task T08_con_el_interruptor_en_true_otra_ruta_responde_igual_que_con_el_interruptor_en_false()
+    {
+        (string, string[])[] falsificados =
+        [
+            ("X-Forwarded-For", ["203.0.113.66"]), ("X-Real-IP", ["203.0.113.66"]),
+            ("CF-Connecting-IP", ["203.0.113.66"]), ("True-Client-IP", ["203.0.113.66"]),
+        ];
+
+        await using var encendido = Anfitrion("true");
+        var conInterruptor = await Pedir(encendido, "/liga-a/equipos", null, falsificados);
+        await using var apagado = Anfitrion("false");
+        var sinInterruptor = await Pedir(apagado, "/liga-a/equipos", null, falsificados);
+
+        Assert.Equal(HttpStatusCode.OK, sinInterruptor.Estado);
+        Assert.Equal(sinInterruptor.Estado, conInterruptor.Estado);
+        Assert.Equal(sinInterruptor.Cuerpo, conInterruptor.Cuerpo);
+    }
 }
