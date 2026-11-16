@@ -1,6 +1,6 @@
 # Spec 009: Tournament rules, standings, top scorers and valla
 
-- **Status:** Draft v3 (2026-11-15, S4D2, H17), Phase A.2 after the Phase A review; v2 was approved on 2026-11-14 (S4D1, H16) with one editorial correction in R-04 and one production check in §8.2, and implemented in Phase A (PR #22). v3 brings into the Spec what the code decided and the Spec did not say (R-38, R-07 e, R-23) and adds the missing test of R-35 (T-23; C-29, C-30). History: v1 built from the owner's decisions of 2026-11-14 (retos R1 to R6 with predictions, and decisions D0 to D6); v2 after the owner's review the same day (C-04, C-13, C-14 and C-18 accepted; C-16 accepted as provisional; C-21 accepted with a security condition, so the new endpoints stay disabled in production until Spec 010 is verified; findings A1 to A3: R-23, R-36, R-37, T-20 to T-22, C-25 to C-28). The sporting values of both pilot leagues (P-01, points for a loss, walkover effects, phase format) are **not** confirmed; this Spec defines the structure that holds them and never a default for them.
+- **Status:** **Implemented** (2026-11-15, S4D2, H17). PR #22 merged as `aa6e9d5` (CI #64 green: build-test, docker-build and deploy); Render *Live* with `aa6e9d5`; migration `20261115000845_ReglamentosDeTorneo` applied and verified by the owner before the merge; production smoke passed with the statistics endpoints off (§8.2). v4 is this closing edit: §8 and §9 filled with real results, and the "Must fail when" column of T-11 corrected after the Phase B audit (C-31). Earlier: Draft v3 (2026-11-15, S4D2, H17), Phase A.2 after the Phase A review; v2 was approved on 2026-11-14 (S4D1, H16) with one editorial correction in R-04 and one production check in §8.2, and implemented in Phase A (PR #22). v3 brings into the Spec what the code decided and the Spec did not say (R-38, R-07 e, R-23) and adds the missing test of R-35 (T-23; C-29, C-30). History: v1 built from the owner's decisions of 2026-11-14 (retos R1 to R6 with predictions, and decisions D0 to D6); v2 after the owner's review the same day (C-04, C-13, C-14 and C-18 accepted; C-16 accepted as provisional; C-21 accepted with a security condition, so the new endpoints stay disabled in production until Spec 010 is verified; findings A1 to A3: R-23, R-36, R-37, T-20 to T-22, C-25 to C-28). The sporting values of both pilot leagues (P-01, points for a loss, walkover effects, phase format) are **not** confirmed; this Spec defines the structure that holds them and never a default for them.
 - **Date:** 2026-11-14
 - **Related:** Spec 006 §7.1 (binding obligations, all mapped in §3.3), Spec 005 (amended: R-14, R-19, R-20, R-21, R-25 — the import carries the tournament rules), ADR-06 (rules are data of the tournament, kept as historical configuration), ADR-03 (module `Estadisticas`), ADR-14 (§2.11 keys), Spec 002 §10 and `CLAUDE.md` (public endpoints without a rate limit; C-21), Spec 010 (rate limiting, H18; out of scope here)
 - **Effort:** Medium. The tie-break comparator (§3.4) is delicate logic: `opusplan` is suggested for it in Phase A.
@@ -134,6 +134,7 @@ For any tournament of a league, anyone can read the standings of a phase, the to
 | C-27 | Does T-10 prove the concurrent conflict? | It did not: without a controlled interleaving, two imports could run one after the other and both succeed with consecutive versions. T-20 (a) holds both after they read the same current version and asserts that order; T-20 (b) lets the second read only after the first commit and expects two successes. | Owner (finding A3 in the v1 review), 2026-11-14 |
 | C-29 | Who fixes the error paths and codes of the rules, the body of the omitted-rules conflict and the shape of `porEquipo`? | v2 did not say. Phase A chose them (decision D-A3 of the handoff), and v3 adopts them as the contract (R-38, R-07 e, R-23), because a public contract must not depend on the implementer's choices. | Owner (D-A3), 2026-11-14; adopted in v3, 2026-11-15 |
 | C-30 | Which test covers R-35? | None did: §9 of v2 mapped R-30 to R-35 to T-14 and T-18, which do not look at logs (a mapping error of the mentor, found in the Phase A report). v3 adds T-23. It protects code that already exists, so it is an initial green, and its red comes from a Phase B mutation. | Mentor (Phase A review), 2026-11-15 |
+| C-31 | Does T-11 detect reading the wrong sheet version? | No. The Phase B mutant M4 (the port always joins version 1) left T-11 green: the state of each match comes from `partidos.estado`, so the withdrawn M12 is excluded as `Programado` even when its version-1 sheet is read, and the other F6 matches have only version 1. T-12 a, T-12 and T-16 killed M4. v4 corrects the column of T-11 so it does not promise a detection it cannot make. | Mentor (Phase B audit), 2026-11-15 |
 | C-28 | How are the endpoints kept off in production? | A setting read at startup decides whether they are mapped (R-37), the same pattern as `IA:Habilitada`. A disabled route is indistinguishable from an unknown one, so the API reveals nothing about features that are off. | Mentor (proposal for the condition of C-21), 2026-11-14 |
 
 ## 6. Tests
@@ -152,7 +153,7 @@ Unit tests run the pure calculation over the fixtures of Appendix A; integration
 | T-08 | R-20, R-22, R-24, R-28 | Unit: two teams tied in standings and valla with codes `a1` and `B1`, and two players tied in scorers with codes `j1` and `K1`, are ordered `B1`, `a1` and `K1`, `j1` (ordinal). | Any order uses a culture-sensitive comparison (the default `string` comparer). |
 | T-09 | R-05, R-06 | Unit (validator), with each violation on a different member so that none causes another: **body 1** with `estado` `Oficial` (a), `adjudicacion.WalkOver.deduccionPerdedor` 11 (b), `puntos` {1, 1, 0} (c), `adjudicacion.Sancion` {`puntosGanador` 0, `puntosEmpate` 0, `puntosPerdedor` 1} (d), `criterios` [`PuntosDirectos`, `DiferenciaDeGoles`, `DiferenciaDeGolesDirecta`, `GolesAFavor`, `GolesAFavor`, `FairPlay`] without a `fairPlay` section (e, f, g) and `adjudicacion.Otro` without `tarjetasEnFairPlay` (i) returns exactly 8 errors with their paths; **body 2**, valid except `fairPlay.roja` 101 (h), returns exactly 1; a valid body returns none, and `{"criterios": [], "directoRecursivo": false}` is valid. Integration: an unknown `adjudicacion` key gets `400`. | The validator stops at the first error, a rule is missing, or an absent member gets a default. |
 | T-10 | R-05, R-07, R-08, R-10, C-14 | Integration (API): an import with `reglamento` creates version 1 (`creados` 1); the identical import writes nothing (the Spec 005 T-05 snapshot of every table, rows and `xmin`, unchanged; `sinCambios` 1); a change of `estado` only creates version 2 (`actualizados` 1) with the Admin's `sub` in `guardado_por`, and version 1 is unchanged; an import without `reglamento` then gets `409` with the conflict `reglamento` and writes nothing. | A version is updated or deleted, an identical import writes, the `sub` is not stored, or omitting deletes. |
-| T-11 | R-11 to R-27 | Integration (API end to end): F6 is loaded with the real import and the real sheet `PUT` (M12 saved as version 1 `Jugado` 4–0 and then withdrawn as version 2), and the three endpoints return the bodies of Appendix A exactly, with `reglamento` {`version` 1, `estado` `Provisional`}. | The read path differs from the unit calculation, a withdrawn version still counts, or the provisional state is not returned. |
+| T-11 | R-11 to R-27 | Integration (API end to end): F6 is loaded with the real import and the real sheet `PUT` (M12 saved as version 1 `Jugado` 4–0 and then withdrawn as version 2), and the three endpoints return the bodies of Appendix A exactly, with `reglamento` {`version` 1, `estado` `Provisional`}. | The read path differs from the unit calculation, a match whose current state is not `Jugado` or `Adjudicado` still counts (the withdrawn M12), or the provisional state is not returned. Reading a sheet version other than the current one is detected by T-12 a, T-12 and T-16, not by T-11 (C-31). |
 | T-12 | R-11, R-13 | Integration: a match saved `Jugado` 2–0 (version 1) and corrected to 1–1 (version 2) counts once, as 1–1, in the standings (each team `pj` 1, `pe` 1) and in the scorers. | Versions are summed or the old version is read. |
 | T-13 | R-25, C-13 | Integration: without rules, for F6 the standings answer `409` with `faltantes` [`puntos`, `desempate`, `adjudicacion.WalkOver`] and no table, the valla `409` with [`adjudicacion.WalkOver`], and the top scorers `200` with `reglamento` null; rules with `puntos` and `desempate` only give [`adjudicacion.WalkOver`] for the standings and for the valla, while the top scorers answer `200` (M10 has no sporting score); rules without `desempate` give [`desempate`]; rules with `{"criterios": []}` give `200`. | A default is assumed, a needed section is not reported, or a section that is not needed blocks a table. |
 | T-14 | R-02, R-26, R-34 | Integration: two leagues with the same tournament and team codes each see only their own tables; a tournament of another league is `404`; as `goalflow_app`, a `reglamentos_torneo` row of league A referencing a tournament of league B is rejected with `23503`; `goalflow_app` has no `UPDATE` or `DELETE` on the table; the exact sets of R-34 are updated. | Isolation, the composite key or the privileges are missing. |
@@ -180,13 +181,13 @@ Unit tests run the pure calculation over the fixtures of Appendix A; integration
 
 ## 8. Definition of done
 
-- [ ] All tests above pass and none was modified to make it pass.
-- [ ] Every requirement maps to at least one test (§9).
-- [ ] No new warnings; no secrets in the diff; no new package.
-- [ ] Migration with RLS and privileges in the same migration; idempotent script generated by CI and applied by the owner as `postgres` before the merge (ADR-05).
-- [ ] `CLAUDE.md` and Spec 002 §10 amended as C-21 says (the `equipos` exception until Spec 010, deadline before the frontend is public; the new endpoints off in production by R-37); Spec 005 amended (R-14, R-19, R-20, R-21, R-25) by reference to this Spec.
-- [ ] The setting of R-37 is absent or false in every committed configuration file.
-- [ ] PR description (outside the repository) with the validation table and real results.
+- [x] All tests above pass and none was modified to make it pass: full suite 943 passed, 0 failed, 0 skipped on `3fcf91d` (smoke test with the real provider excluded by filter).
+- [x] Every requirement maps to at least one test (§9). R-35 had none in v2; T-23 was added in v3 (C-30).
+- [x] No new warnings; no secrets in the diff; no new package.
+- [x] Migration with RLS and privileges in the same migration; idempotent script generated by CI and applied by the owner as `postgres` before the merge (ADR-05), on 2026-11-15.
+- [x] `CLAUDE.md` and Spec 002 §10 amended as C-21 says (the `equipos` exception until Spec 010, deadline before the frontend is public; the new endpoints off in production by R-37); Spec 005 amended (R-14, R-19, R-20, R-21, R-25) by reference to this Spec.
+- [x] The setting of R-37 is absent or false in every committed configuration file (T-21), and absent in Render.
+- [x] PR description (outside the repository) with the validation table and real results, including Phase A.2 and the Phase B mutation audit (17 mutations, 17 killed; the owner's three predictions exact in cases and names).
 
 ### 8.1 Delivery, evidence and audit
 
@@ -195,6 +196,16 @@ Unit tests run the pure calculation over the fixtures of Appendix A; integration
 - Expected values come only from Appendix A or are computed in the chat before the run; a difference stops the run (Estado §4.2 rule 5).
 
 ### 8.2 Production checks (owner)
+
+**Results (2026-11-15, by the owner):**
+
+- **Migration:** applied before the merge as `postgres`; verified: last history row `20261115000845_ReglamentosDeTorneo` (7 migrations), `relrowsecurity` true, policy `reglamentos_torneo_tenant`, `goalflow_app` with `SELECT` and `INSERT` only, `ux_reglamentos_torneo_tenant_torneo_version` unique, table empty.
+- **Deployment:** merge `aa6e9d5`, CI #64 green, Render *Live* with `aa6e9d5`, `/health` 200 at 23:12:19 UTC.
+- **Setting of R-37:** absent in Render.
+- **Smoke with a temporary league (`liga-humo`):** an authenticated Admin import of `HUMO-T1` with a `Provisional` rules version answered `200` with `reglamento` {`creados` 1}; `GET /liga-humo/equipos` answered `200`; the three endpoints of R-26 answered `404`. All smoke rows were deleted in one transaction and the 17 `goalflow` tables were verified at 0 for that tenant (0 leagues left).
+- **Limits of this evidence:** the statistics were not computed over HTTP in production (the endpoints are off); `401`, `403` and cross-tenant cases were not exercised in production (they are covered by the test suite). The comparison with the official tables and the `Confirmado` rules wait for real data.
+
+**Checks:**
 
 - The migration is applied and verified (RLS, privileges) before the merge.
 - With real data, for each league: the standings computed at the cut-off match the league's official table. Only then may the Admin send its rules as `Confirmado` (C-12). The evidence (the official table, the computed one and the league's written confirmation of the rules) is kept outside the repository. A mismatch is reported in the chat, never fixed by editing a sheet to force a table. While R-37 keeps the endpoints off, this check runs locally against a restored copy or with the setting on in a non-public environment.
@@ -205,14 +216,14 @@ Unit tests run the pure calculation over the fixtures of Appendix A; integration
 
 | Requirement | Test | Result | Evidence |
 | --- | --- | --- | --- |
-| R-01 to R-10, R-36 | T-09, T-10, T-14, T-15, T-20, T-22 | | |
-| R-11 to R-15 | T-06, T-11, T-12, T-16 | | |
-| R-16 to R-21 | T-01 to T-04, T-06, T-07, T-08, T-11 | | |
-| R-22 to R-24 | T-04 to T-06, T-08, T-11 | | |
-| R-25 | T-13 | | |
-| R-26 to R-29, R-37 | T-11, T-14, T-15, T-17, T-19, T-21 | | |
-| R-30 to R-34 | T-14, T-18 | | |
-| R-35, R-38 | T-23, T-09 | | |
+| R-01 to R-10, R-36 | T-09, T-10, T-14, T-15, T-20, T-22 | Pass | PR #22 validation table; Phase B: M10, M11, M13, M15 to M17 killed |
+| R-11 to R-15 | T-06, T-11, T-12, T-16 | Pass | PR #22; T-12 a and T-16 a (port) in Phase A; M4, M12 (5 runs) and M14 killed |
+| R-16 to R-21 | T-01 to T-04, T-06, T-07, T-08, T-11 | Pass | Appendix A matched with no difference; MP1, M5 to M7 and M9 killed |
+| R-22 to R-24 | T-04 to T-06, T-08, T-11 | Pass | Appendix A matched; M14 killed |
+| R-25 | T-13 | Pass | M8 killed |
+| R-26 to R-29, R-37 | T-11, T-14, T-15, T-17, T-19, T-21 | Pass | 9 commands for F6 and for 190 matches; 0 with the setting off; MP2 killed; production `404` with the setting absent (§8.2) |
+| R-30 to R-34 | T-14, T-18 | Pass | IL rule with its canary; module graph and exact sets updated |
+| R-35, R-38 | T-23, T-09 | Pass | T-23 initial green, red by MP3 |
 
 ## 10. Risks and open items
 
