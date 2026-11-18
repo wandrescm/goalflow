@@ -149,6 +149,28 @@ public class LimiteDeFrecuenciaTests
         await Enviar(cliente, "/health", ip, 5, HttpStatusCode.OK); // y con la clase agotada, /health responde 200
     }
 
+    // Spec 010 v5, T-13 (b): verde inicial; su rojo lo da el mutante ME de la auditoría (/health compartiendo la cuota global de publica).
+    [Fact]
+    public async Task T13b_health_no_consume_ni_queda_limitado_por_la_cuota_global_de_publica()
+    {
+        await using var fabrica = Anfitrion(publicaPorCliente: 10, publicaGlobal: 3);
+        var cliente = fabrica.CreateClient();
+
+        // Paso 1: cinco /health del mismo cliente, todas 200 (más que el global de publica).
+        await Enviar(cliente, "/health", "192.0.2.80", 5, HttpStatusCode.OK);
+
+        // Paso 2: tres públicas de tres direcciones, aceptadas (404): el global de publica seguía intacto.
+        Assert.Equal(HttpStatusCode.NotFound, await Estado(cliente, RutaPublica, "192.0.2.81"));
+        Assert.Equal(HttpStatusCode.NotFound, await Estado(cliente, RutaPublica, "192.0.2.82"));
+        Assert.Equal(HttpStatusCode.NotFound, await Estado(cliente, RutaPublica, "192.0.2.83"));
+
+        // Paso 3: la cuarta pública agota el global de publica: 429.
+        Assert.Equal(HttpStatusCode.TooManyRequests, await Estado(cliente, RutaPublica, "192.0.2.84"));
+
+        // Paso 4: con publica agotada, /health sigue respondiendo 200.
+        await Enviar(cliente, "/health", "192.0.2.80", 3, HttpStatusCode.OK);
+    }
+
     // ---- T-14 ----
 
     [Fact]
@@ -283,6 +305,26 @@ public class LimiteDeFrecuenciaTests
 
         Assert.Equal(HttpStatusCode.TooManyRequests, await Estado(cliente, RutaPublica, ip: null));
         Assert.Equal(HttpStatusCode.NotFound, await Estado(cliente, RutaPublica, "198.51.100.10"));
+    }
+
+    // Spec 010 v5, T-17 (e): verde inicial; su rojo lo da el mutante MF de la auditoría (la clave por cliente sin la clase).
+    [Fact]
+    public async Task T17e_la_clase_forma_parte_de_la_clave_por_cliente()
+    {
+        await using var fabrica = Anfitrion(
+            publicaPorCliente: 1, publicaGlobal: 10, adminPorCliente: 1, adminGlobal: 10, resolutor: new ResolutorQueCuenta());
+        var cliente = fabrica.CreateClient();
+        const string x = "198.51.100.10";
+        const string y = "192.0.2.20";
+
+        // Paso 1: X agota su cuota pública (1).
+        Assert.Equal(HttpStatusCode.NotFound, await Estado(cliente, RutaPublica, x));
+        // Paso 2: la cuota de X en la clase admin es otra partición: se acepta.
+        Assert.Equal(HttpStatusCode.NotFound, await Estado(cliente, RutaAdmin, x));
+        // Paso 3: Y entra primero por admin: se acepta.
+        Assert.Equal(HttpStatusCode.NotFound, await Estado(cliente, RutaAdmin, y));
+        // Paso 4: y su cuota pública es otra partición: se acepta.
+        Assert.Equal(HttpStatusCode.NotFound, await Estado(cliente, RutaPublica, y));
     }
 
     // ---- T-18 ----
