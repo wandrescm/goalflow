@@ -18,9 +18,6 @@ public static class AdminEndpoints
         admin.MapImportacionDeTorneo();
         admin.MapPlanilla();
 
-        // Temporal (Spec 010 R-01): sin interruptor la ruta no existe y responde 404 a cualquiera.
-        if (DiagnosticoDeRed.Habilitado(app.ServiceProvider.GetRequiredService<IConfiguration>())) admin.MapDiagnosticoDeRed();
-
         return app;
     }
 
