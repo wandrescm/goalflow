@@ -24,6 +24,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 
 builder.Services.AddGoalFlowForwardedHeaders();
 builder.Services.AddGoalFlowCors();
+builder.Services.AddGoalFlowLimiteDeFrecuencia();
 builder.Services.AddGoalFlowPersistencia();
 builder.Services.AddGoalFlowMensajeria();
 builder.Services.AddGoalFlowIA(builder.Configuration);
@@ -43,6 +44,7 @@ var app = builder.Build();
 
 app.UseGoalFlowForwardedHeaders();
 app.UseGoalFlowCors();
+app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok());
 app.MapGoalFlowEquipos();

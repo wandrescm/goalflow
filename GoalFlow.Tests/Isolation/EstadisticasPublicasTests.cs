@@ -2,6 +2,8 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using static GoalFlow.Tests.Isolation.BaseDeAislamiento;
 using static GoalFlow.Tests.Isolation.EntornoDeEstadisticas;
 
@@ -296,7 +298,12 @@ public partial class EstadisticasPublicasTests(BaseDeAislamiento db)
     [Fact]
     public async Task T17_el_numero_de_comandos_de_cada_endpoint_es_el_mismo_para_F6_y_para_un_torneo_de_20_equipos_y_190_partidos()
     {
-        await using var e = new EntornoDeEstadisticas(db);
+        // Spec 010 C-20: esta prueba guarda 190 planillas para contar comandos, no prueba el limitador.
+        await using var e = new EntornoDeEstadisticas(db, ajustar: b => b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["LimiteDeFrecuencia:Admin:PorCliente"] = "1000",
+            ["LimiteDeFrecuencia:Admin:Global"] = "1000",
+        })));
         var (f6, grande) = (Prefijo(), Prefijo());
         await e.CargarF6("liga-a", f6, ReglasDeF6());
 

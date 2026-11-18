@@ -15,7 +15,8 @@ public static class CorsExtensions
                 options.AddDefaultPolicy(policy => policy
                     .WithOrigins(origins.Where(o => !string.IsNullOrWhiteSpace(o)).ToArray())
                     .AllowAnyHeader()
-                    .AllowAnyMethod());
+                    .AllowAnyMethod()
+                    .WithExposedHeaders("Retry-After"));
             });
 
         return services;
