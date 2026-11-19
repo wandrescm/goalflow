@@ -78,8 +78,10 @@ Estructura (ADR-03, en `docs/adr/`):
 ## Seguridad y secretos
 
 - **No subas secretos ni cadenas de conexión al repositorio** (es público). Usa variables de entorno y `dotnet user-secrets` en local.
-- CORS restringido a los orígenes del frontend; límite de frecuencia en endpoints públicos.
-- **Excepción temporal (Spec 002 §10, enmendada por la Spec 009 C-21):** `GET /{slug}/equipos` no tiene límite de frecuencia hasta que la Spec 010 lo implemente y se verifique en producción (ADR-05 R-15). Responsable: el propietario. Fecha límite: antes de publicar el frontend. Pruebas pendientes (Spec 010): IP real, encabezados falsificados y respuesta `429`. No agregues otro endpoint público sin límite.
+- CORS restringido a los orígenes del frontend, con `Retry-After` expuesto.
+- **Límite de frecuencia (Spec 010):** toda ruta salvo `/health` queda bajo un único limitador global encadenado, por cliente y luego global por clase (`publica` o `admin`), sin políticas por endpoint. Una ruta nueva queda cubierta por su clase; no excluyas ninguna ruta además de `/health` sin una Spec. El rechazo es `429` con `Retry-After` y no deja logs con la IP.
+- **IP del cliente:** sale solo de `CF-Connecting-IP`, y solo la lee `ParticionDeFrecuencia`. Ningún otro código nombra ese encabezado ni lee `ConnectionInfo.RemoteIpAddress`, y la IP nunca participa en autenticación, autorización ni aislamiento entre ligas (Spec 010 R-22, T-21). El middleware de encabezados reenviados solo procesa `X-Forwarded-Proto` (R-23).
+- La excepción temporal de `GET /{slug}/equipos` (Spec 002 §10) quedó cerrada el 2026-11-19.
 - Los endpoints públicos de estadísticas (Spec 009 R-26) solo se mapean si `Estadisticas:EndpointsPublicosHabilitados` es `true`; por defecto es `false` en todos los ambientes y apagados responden `404`. Nunca lo enciendas en un handoff ni en un archivo de configuración versionado: encenderlo en producción es decisión del propietario, después de verificar la Spec 010.
 
 ## Estadísticas (Spec 009)
