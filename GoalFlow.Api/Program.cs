@@ -24,6 +24,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 
 builder.Services.AddGoalFlowForwardedHeaders();
 builder.Services.AddGoalFlowCors();
+builder.Services.AddGoalFlowLimiteDeFrecuencia();
 builder.Services.AddGoalFlowPersistencia();
 builder.Services.AddGoalFlowMensajeria();
 builder.Services.AddGoalFlowIA(builder.Configuration);
@@ -41,10 +42,9 @@ builder.Services.AddScoped<ConsultaDeValla>();
 
 var app = builder.Build();
 
-// Temporal (Spec 010 R-02): la captura va antes de los encabezados reenviados para ver lo que llegó, no lo que queda.
-if (DiagnosticoDeRed.Habilitado(app.Configuration)) app.UseGoalFlowDiagnosticoDeRed();
 app.UseGoalFlowForwardedHeaders();
 app.UseGoalFlowCors();
+app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok());
 app.MapGoalFlowEquipos();
