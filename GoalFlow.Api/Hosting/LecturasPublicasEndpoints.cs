@@ -1,7 +1,9 @@
 using System.Globalization;
+using GoalFlow.Application.IA;
 using GoalFlow.Application.Ligas;
 using GoalFlow.Application.Tenancy;
 using GoalFlow.Application.Torneos;
+using GoalFlow.Application.Torneos.Contracts;
 using GoalFlow.Domain.Torneos;
 
 namespace GoalFlow.Api.Hosting;
@@ -38,6 +40,20 @@ public static class LecturasPublicasEndpoints
 
             var resultado = await consulta.EjecutarAsync(codigo, fase, cancellationToken);
             return resultado.Encontrado ? Results.Ok(resultado.Partidos) : Results.NotFound();
+        });
+
+        app.MapGet("/{slug}/torneos/{codigo}/fases/{orden}/partidos/{local}/{visitante}", async (
+            string slug, string codigo, string orden, string local, string visitante, IResolutorDeSlug resolutor,
+            ITenantContext tenantContext, ConsultaDeDetalleDePartido consulta, CancellationToken cancellationToken) =>
+        {
+            // Malformada: 400 antes de resolver el slug y de tocar la base (R-08, R-31).
+            if (!FormatoDeCodigos.EsValido(codigo) || !EsOrdenValido(orden, out var fase)
+                || !FormatoDeCodigos.EsValido(local) || !FormatoDeCodigos.EsValido(visitante))
+                return Results.BadRequest();
+            if (await Resolver(slug, resolutor, tenantContext, cancellationToken) is false) return Results.NotFound();
+
+            var resultado = await consulta.EjecutarAsync(new ClaveNaturalDePartido(codigo, fase, local, visitante), cancellationToken);
+            return resultado.Encontrado ? Results.Ok(resultado.Detalle) : Results.NotFound();
         });
 
         return app;
