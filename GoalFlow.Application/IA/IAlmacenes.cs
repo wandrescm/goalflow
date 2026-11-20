@@ -37,6 +37,12 @@ public interface IAlmacenDeResumenes
     /// (R-22), y la transacción sigue usable.
     /// </summary>
     Task<bool> InsertarAsync(ResumenPartido resumen, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Todas las filas de resumen de un partido del tenant actual (Spec 011 R-15), sin filtrar por estado, huella ni texto: quien decide
+    /// qué se publica es <see cref="SelectorDePublicacion"/>. Su número está acotado por el de huellas distintas del partido.
+    /// </summary>
+    Task<IReadOnlyList<ResumenPartido>> ListarDelPartidoAsync(Guid partidoId, CancellationToken cancellationToken);
 }
 
 /// <summary>Quién es visible: el resumen cuya huella es la de la entrada vigente (ADR-12 §2.3), nunca por versión.</summary>

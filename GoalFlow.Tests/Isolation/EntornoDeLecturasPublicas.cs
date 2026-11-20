@@ -2,9 +2,15 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using GoalFlow.Application.IA;
 using GoalFlow.Application.Ligas;
+using GoalFlow.Application.Persistencia;
+using GoalFlow.Application.Tenancy;
+using GoalFlow.Domain.IA;
 using GoalFlow.Domain.Ligas;
+using GoalFlow.Domain.Tenancy;
 using GoalFlow.Infrastructure.Ligas;
+using Npgsql;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -90,14 +96,55 @@ public sealed partial class EntornoDeLecturasPublicas : IAsyncDisposable
     // ---- Ligas propias de la prueba ----
 
     /// <summary>Crea una liga nueva con U1 como Admin y devuelve su slug. Datos inventados.</summary>
-    public async Task<string> CrearLiga(string nombre = "Liga de prueba")
+    public async Task<string> CrearLiga(string nombre = "Liga de prueba") => (await CrearLigaConTenant(nombre)).Slug;
+
+    public async Task<(string Slug, TenantId Tenant)> CrearLigaConTenant(string nombre = "Liga de prueba")
     {
         var (id, slug) = (Guid.NewGuid(), $"liga-{Guid.NewGuid():N}"[..14]);
         await _db.EjecutarComoSuperusuario($"""
             insert into goalflow.ligas (id, slug, nombre) values ('{id}', '{slug}', '{nombre}');
             insert into goalflow.admins_liga (user_id, tenant_id, rol) values ('{UsuarioU1}', '{id}', 'admin');
             """);
-        return slug;
+        return (slug, new TenantId(id));
+    }
+
+    // ---- Acceso directo a los puertos, por el registro real de DI del anfitrión ----
+
+    /// <summary>Un scope del anfitrión con el tenant fijado, como lo deja el endpoint tras resolver el slug.</summary>
+    public AsyncServiceScope ScopeDe(TenantId tenant)
+    {
+        var scope = E.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(tenant);
+        return scope;
+    }
+
+    /// <summary>Inserta filas de resumen con el adaptador real, en una transacción de la unidad de trabajo, y confirma.</summary>
+    public async Task InsertarResumenes(TenantId tenant, params ResumenPartido[] filas)
+    {
+        await using var scope = ScopeDe(tenant);
+        await using var transaccion = await scope.ServiceProvider.GetRequiredService<IUnidadDeTrabajo>().IniciarAsync(default);
+        var almacen = scope.ServiceProvider.GetRequiredService<IAlmacenDeResumenes>();
+        foreach (var fila in filas) Assert.True(await almacen.InsertarAsync(fila, default));
+        await transaccion.ConfirmarAsync(default);
+    }
+
+    /// <summary>Los partidos de la fase 1 de un torneo con su clave natural, leídos como superusuario (solo para armar pruebas).</summary>
+    public async Task<List<(Guid Id, string Local, string Visitante)>> PartidosDe(TenantId tenant, string torneo)
+    {
+        await using var conexion = new NpgsqlConnection(_db.CadenaSuperusuario);
+        await conexion.OpenAsync();
+        await using var comando = new NpgsqlCommand($"""
+            select pa.id, el.codigo, ev.codigo from goalflow.partidos pa
+            join goalflow.torneos t on t.id = pa.torneo_id
+            join goalflow.fases f on f.id = pa.fase_id
+            join goalflow.equipos_torneo l on l.id = pa.local_id join goalflow.equipos el on el.id = l.equipo_id
+            join goalflow.equipos_torneo v on v.id = pa.visitante_id join goalflow.equipos ev on ev.id = v.equipo_id
+            where pa.tenant_id = '{tenant.Value}' and t.codigo = '{torneo}' and f.orden = 1
+            """, conexion);
+        await using var lector = await comando.ExecuteReaderAsync();
+        var partidos = new List<(Guid, string, string)>();
+        while (await lector.ReadAsync()) partidos.Add((lector.GetGuid(0), lector.GetString(1), lector.GetString(2)));
+        return partidos;
     }
 
     // ---- Peticiones ----

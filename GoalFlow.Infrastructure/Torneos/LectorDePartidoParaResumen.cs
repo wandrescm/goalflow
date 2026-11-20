@@ -12,6 +12,31 @@ namespace GoalFlow.Infrastructure.Torneos;
 /// </summary>
 public sealed class LectorDePartidoParaResumen(GoalFlowDbContext contexto) : ILectorDePartidoParaResumen
 {
+    /// <summary>
+    /// Resuelve la clave natural a un partido (Spec 011 R-30) y lee sus datos con <see cref="LeerAsync"/>, la misma proyección. Los códigos
+    /// se comparan exactamente, sensibles a mayúsculas, como la columna. Con cualquier parte inexistente devuelve null.
+    /// </summary>
+    public async Task<PartidoPorClave?> LeerPorClaveAsync(ClaveNaturalDePartido clave, CancellationToken cancellationToken)
+    {
+        if (contexto.Database.CurrentTransaction is null) throw new TransaccionRequeridaException();
+
+        var partidoId = await (
+            from p in contexto.Partidos.AsNoTracking()
+            join f in contexto.Fases on p.FaseId equals f.Id
+            join t in contexto.Torneos on f.TorneoId equals t.Id
+            join l in contexto.EquiposTorneo on p.LocalId equals l.Id
+            join v in contexto.EquiposTorneo on p.VisitanteId equals v.Id
+            join el in contexto.Equipos on l.EquipoId equals el.Id
+            join ev in contexto.Equipos on v.EquipoId equals ev.Id
+            where t.Codigo == clave.CodigoTorneo && f.Orden == clave.OrdenFase
+                && el.Codigo == clave.CodigoLocal && ev.Codigo == clave.CodigoVisitante
+            select (Guid?)p.Id).SingleOrDefaultAsync(cancellationToken);
+        if (partidoId is not { } id) return null;
+
+        var datos = await LeerAsync(id, cancellationToken);
+        return datos is null ? null : new PartidoPorClave(id, datos);
+    }
+
     public async Task<DatosDePartidoParaResumen?> LeerAsync(Guid partidoId, CancellationToken cancellationToken)
     {
         if (contexto.Database.CurrentTransaction is null) throw new TransaccionRequeridaException();
