@@ -34,6 +34,8 @@ public static class RegistroDePersistencia
         services.AddScoped<ConsultaDeMembresia>();
         services.AddScoped<ILectorDeEquipos, LectorDeEquipos>();
         services.AddScoped<ConsultaDeEquipos>();
+        services.AddScoped<ILectorDeTorneosDeLaLiga, LectorDeTorneosDeLaLiga>();
+        services.AddScoped<ConsultaDeTorneosDeLaLiga>();
         services.AddScoped<IAlmacenDeImportacion, AlmacenDeImportacion>();
         services.AddScoped<ImportacionDeTorneo>();
         services.AddScoped<Application.Torneos.Contracts.ILectorDeTorneoParaEstadisticas, LectorDeTorneoParaEstadisticas>();

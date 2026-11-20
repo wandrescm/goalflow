@@ -49,6 +49,7 @@ app.UseRateLimiter();
 app.MapGet("/health", () => Results.Ok());
 app.MapGoalFlowEquipos();
 app.MapGoalFlowAdmin();
+app.MapGoalFlowLecturasPublicas();
 
 // Apagado por defecto en todo ambiente (R-37): sin interruptor, las tres rutas no existen y responden 404.
 if (EstadisticasEndpoints.Habilitado(app.Configuration)) app.MapGoalFlowEstadisticas();
