@@ -2,7 +2,12 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using GoalFlow.Application.Ligas;
+using GoalFlow.Domain.Ligas;
+using GoalFlow.Infrastructure.Ligas;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using static GoalFlow.Tests.Isolation.BaseDeAislamiento;
 
 namespace GoalFlow.Tests.Isolation;
@@ -21,12 +26,61 @@ public sealed partial class EntornoDeLecturasPublicas : IAsyncDisposable
     public EntornoDeLecturasPublicas(BaseDeAislamiento db, Action<IWebHostBuilder>? ajustar = null)
     {
         _db = db;
-        E = new EntornoDeEstadisticas(db, interruptor: null, ajustar);
+        Resolutor = new ContadorDeResolutor();
+        E = new EntornoDeEstadisticas(db, interruptor: null, b =>
+        {
+            b.ConfigureTestServices(servicios =>
+            {
+                // Decora al resolutor real: cuenta las llamadas y delega (sus comandos siguen contando para el interceptor de EF Core).
+                var original = servicios.Single(d => d.ServiceType == typeof(IResolutorDeSlug));
+                servicios.Remove(original);
+                servicios.AddScoped<IResolutorDeSlug>(sp =>
+                    new ResolutorQueCuenta(ActivatorUtilities.CreateInstance<ResolutorDeSlug>(sp), Resolutor));
+            });
+            ajustar?.Invoke(b);
+        });
     }
 
     public EntornoDeEstadisticas E { get; }
 
+    public ContadorDeResolutor Resolutor { get; }
+
     public ContadorDeComandosDelAnfitrion Comandos => E.Comandos;
+
+    public sealed class ContadorDeResolutor
+    {
+        private int _llamadas;
+
+        public int Llamadas => Volatile.Read(ref _llamadas);
+
+        public void Registrar() => Interlocked.Increment(ref _llamadas);
+    }
+
+    private sealed class ResolutorQueCuenta(IResolutorDeSlug interno, ContadorDeResolutor contador) : IResolutorDeSlug
+    {
+        public Task<Liga?> ResolverAsync(string slug, CancellationToken cancellationToken)
+        {
+            contador.Registrar();
+            return interno.ResolverAsync(slug, cancellationToken);
+        }
+    }
+
+    /// <summary>Una petición <c>GET</c> con el recuento de comandos de base (desde el inicio de la petición) y las llamadas al resolutor.</summary>
+    public async Task<(HttpStatusCode Estado, string Texto, int Comandos, int Resoluciones)> Medir(string ruta, string? autorizacion = null)
+    {
+        var antes = Resolutor.Llamadas;
+        Comandos.Reiniciar();
+        using var peticion = new HttpRequestMessage(HttpMethod.Get, ruta);
+        if (autorizacion is not null) peticion.Headers.TryAddWithoutValidation("Authorization", autorizacion);
+        using var respuesta = await E.Base.Cliente.SendAsync(peticion);
+        var texto = await respuesta.Content.ReadAsStringAsync();
+        return (respuesta.StatusCode, texto, Comandos.Ejecutados, Resolutor.Llamadas - antes);
+    }
+
+    // Valores mal formados de la Spec 011 T-13 (a). El segmento vacío no llega al endpoint: el enrutador responde antes.
+    public static readonly string[] OrdenesMalFormados = ["0", "-1", "+1", "1.0", "%201", "x", "99999999999"];
+
+    public static readonly string[] CodigosMalFormados = ["a.b", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "a%20b"];
 
     public ValueTask DisposeAsync() => E.DisposeAsync();
 
@@ -94,6 +148,89 @@ public sealed partial class EntornoDeLecturasPublicas : IAsyncDisposable
             ["fase"] = fases[0].Orden, ["jornada"] = 1, ["local"] = "E1", ["visitante"] = "E2", ["cancelado"] = false,
         }),
     };
+
+    // ---- El fixture de T-02: una fase de una vuelta con un partido en cada estado ----
+
+    public const string TorneoT02 = "T2";
+
+    public static readonly (string Codigo, string Nombre)[] EquiposT02 =
+    [
+        ("E1", "Equipo Uno"), ("E2", "Equipo Dos"), ("E3", "Equipo Tres"), ("E4", "Equipo Cuatro"),
+        ("e5", "Equipo Cinco"), ("E6", "Equipo Seis"), ("E7", "Equipo Siete"), ("E8", "Equipo Ocho"),
+    ];
+
+    // El código «e5» en minúscula hace que el orden ordinal difiera del de cualquier cultura (R-06).
+    private static readonly (int Jornada, string Local, string Visitante, string? Hora)[] PartidosT02 =
+    [
+        (1, "E1", "E2", "2026-11-20T20:00:00-05:00"),
+        (1, "E3", "E4", null),
+        (1, "e5", "E6", null),
+        (1, "E7", "E8", null),
+        (2, "E1", "E3", "2026-11-22T10:30:00-05:00"),
+        (2, "E2", "E4", null),
+        (2, "e5", "E7", "2026-11-22T09:00:00-05:00"),
+        (2, "E6", "E8", null),
+    ];
+
+    /// <summary>La importación de T-02. <paramref name="cancelarElUltimo"/> cancela E6–E8 (C-32); E7–E8 llega cancelado desde el principio.</summary>
+    public static JsonObject CuerpoT02(bool cancelarElUltimo, bool inverso)
+    {
+        var equipos = EquiposT02.Select(e => new JsonObject
+        {
+            ["codigo"] = e.Codigo, ["nombre"] = e.Nombre, ["retirado"] = false, ["jugadores"] = new JsonArray(),
+        }).ToList();
+        var partidos = PartidosT02.Select(m => new JsonObject
+        {
+            ["fase"] = 1, ["jornada"] = m.Jornada, ["local"] = m.Local, ["visitante"] = m.Visitante, ["programadoEn"] = m.Hora,
+            ["cancelado"] = (m.Local, m.Visitante) is ("E7", "E8") || (cancelarElUltimo && (m.Local, m.Visitante) is ("E6", "E8")),
+        }).ToList();
+        if (inverso)
+        {
+            equipos.Reverse();
+            partidos.Reverse();
+        }
+
+        return new JsonObject
+        {
+            ["nombre"] = "Torneo Dos",
+            ["fases"] = new JsonArray(new JsonObject { ["orden"] = 1, ["tipo"] = "TodosContraTodos", ["vueltas"] = 1 }),
+            ["equipos"] = new JsonArray([.. equipos.Select(e => (JsonNode)e)]),
+            ["partidos"] = new JsonArray([.. partidos.Select(m => (JsonNode)m)]),
+        };
+    }
+
+    /// <summary>
+    /// Importa T-02 y guarda sus planillas: E1–E2 de 2–0 (v1) a 1–1 (v2); E3–E4 3–1; E5–E6 sin planilla; E7–E8 cancelado; E1–E3 suspendido
+    /// 1–0; E2–E4 adjudicado sin marcador; E5–E7 adjudicado con marcador; E6–E8 jugado, retirado y después cancelado por la importación.
+    /// </summary>
+    public async Task CargarT02(string liga, bool inverso = false)
+    {
+        await E.ImportarConExito(liga, TorneoT02, CuerpoT02(cancelarElUltimo: false, inverso));
+        Task G(string local, string visitante, PlanillaJ planilla) => E.GuardarConExito(liga, TorneoT02, local, visitante, planilla);
+
+        List<Func<Task>> acciones =
+        [
+            async () =>
+            {
+                await G("E1", "E2", new(0, "Jugado", new(2, 0), TarjetasInformadas: true, GolesSinAutor: new(2, 0)));
+                await G("E1", "E2", new(1, "Jugado", new(1, 1), TarjetasInformadas: true, GolesSinAutor: new(1, 1)));
+            },
+            () => G("E3", "E4", new(0, "Jugado", new(3, 1), TarjetasInformadas: false, GolesSinAutor: new(3, 1))),
+            () => G("E1", "E3", new(0, "Suspendido", new(1, 0), Motivo: "Disturbios", TarjetasInformadas: true, GolesSinAutor: new(1, 0))),
+            () => G("E2", "E4", new(0, "Adjudicado", Oficial: new(3, 0), Motivo: "WalkOver")),
+            () => G("e5", "E7", new(0, "Adjudicado", new(2, 1), new(3, 0), "Sancion", TarjetasInformadas: true, GolesSinAutor: new(2, 1))),
+            async () =>
+            {
+                await G("E6", "E8", new(0, "Jugado", new(1, 0), TarjetasInformadas: true, GolesSinAutor: new(1, 0)));
+                await G("E6", "E8", EntornoDePlanilla.Retirada(1));
+            },
+        ];
+        if (inverso) acciones.Reverse();
+        foreach (var accion in acciones) await accion();
+
+        // C-32: la importación cancela un partido cuya planilla vigente es un retiro.
+        await E.ImportarConExito(liga, TorneoT02, CuerpoT02(cancelarElUltimo: true, inverso));
+    }
 
     // ---- Fugas (Spec 011 T-12) ----
 
