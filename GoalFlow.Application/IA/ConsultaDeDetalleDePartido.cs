@@ -51,24 +51,39 @@ public sealed record ResultadoDeDetalleDePartido(bool Encontrado, DetalleDeParti
 /// publica eventos (R-18, R-19).
 /// </summary>
 public sealed class ConsultaDeDetalleDePartido(
-    IUnidadDeTrabajo unidadDeTrabajo, ILectorDePartidoParaResumen lector, ITenantContext tenantContext,
+    IUnidadDeTrabajo unidadDeTrabajo, ILectorDePartidoParaResumen lector, IAlmacenDeResumenes almacen, ITenantContext tenantContext,
     ILogger<ConsultaDeDetalleDePartido> logger)
 {
     public async Task<ResultadoDeDetalleDePartido> EjecutarAsync(ClaveNaturalDePartido clave, CancellationToken cancellationToken)
     {
         DetalleDePartido? detalle = null;
+
+        // Una sola transacción REPEATABLE READ: los hechos, la entrada canónica y las filas de resumen salen de la misma foto (R-20, I-03).
         await using (var transaccion = await unidadDeTrabajo.IniciarLecturaConsistenteAsync(cancellationToken))
         {
             var porClave = await lector.LeerPorClaveAsync(clave, cancellationToken);
-            if (porClave is not null) detalle = ArmarHechos(clave, porClave.Datos);
+            if (porClave is not null)
+            {
+                // La misma entrada canónica sale del mismo objeto que arma los hechos (R-10, R-14).
+                var entrada = EntradaCanonica.Construir(porClave.Datos);
+                var filas = await almacen.ListarDelPartidoAsync(porClave.PartidoId, cancellationToken);
+
+                // Solo el selector decide qué se publica (R-16): de la fila elegida solo se leen el texto y el origen.
+                var publicado = SelectorDePublicacion.Seleccionar(filas, entrada);
+                detalle = ArmarHechos(clave, porClave.Datos) with
+                {
+                    Resumen = publicado is null ? null : new ResumenDelDetalle(publicado.Texto, publicado.Origen.ToString()),
+                };
+            }
+
             await transaccion.ConfirmarAsync(cancellationToken);
         }
 
-        // Nunca nombres, textos ni identificadores (R-26).
+        // Nunca nombres, textos, huellas ni identificadores (R-26): solo si se publicó un resumen, como booleano.
         logger.LogInformation(
-            "Lectura pública: liga {Liga}, ruta {Ruta}, torneo {Torneo}, fase {Fase}, goles {Goles}, tarjetas {Tarjetas}, encontrado {Encontrado}",
+            "Lectura pública: liga {Liga}, ruta {Ruta}, torneo {Torneo}, fase {Fase}, goles {Goles}, tarjetas {Tarjetas}, encontrado {Encontrado}, resumenPublicado {ResumenPublicado}",
             tenantContext.Current.Value, "detalle", clave.CodigoTorneo, clave.OrdenFase,
-            detalle?.Goles.Count ?? 0, detalle?.Tarjetas.Count ?? 0, detalle is not null);
+            detalle?.Goles.Count ?? 0, detalle?.Tarjetas.Count ?? 0, detalle is not null, detalle?.Resumen is not null);
         return detalle is null ? ResultadoDeDetalleDePartido.NoEncontrado() : ResultadoDeDetalleDePartido.Ok(detalle);
     }
 
