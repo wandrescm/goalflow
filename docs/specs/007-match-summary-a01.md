@@ -83,7 +83,7 @@ With `IA:Habilitada` true, every current sheet in `Jugado` or `Adjudicado` gets 
 
 | ID | Requirement |
 | --- | --- |
-| R-33 | `ILectorDePartidoParaResumen` shall return, for a match id of the current tenant, inside the caller's transaction: the tournament id, the current version and state, and the data of R-08 resolved from the **current** sheet (Spec 006 R-07), with goals and cards resolved to the player's name, registration code and side. It shall read only that match, its current sheet with its rows and the names involved. |
+| R-33 | `ILectorDePartidoParaResumen` shall return, for a match id of the current tenant, inside the caller's transaction: the tournament id, the current version and state, and the data of R-08 resolved from the **current** sheet (Spec 006 R-07), with goals and cards resolved to the player's name, registration code and side. It shall read only that match, its current sheet with its rows and the names involved. *Amended by Spec 011 R-30 (2026-11-20, additive):* the port also reads one match by its natural key (tournament code, phase order, home and away team codes) and returns the match id and the same data, built by the same projection; its caller is the public match detail of Spec 011, which never serializes the id. |
 | R-34 | `IListadoDePartidosConResultado` shall return, inside the caller's transaction, the (match id, current version) of every match of the current tenant whose current state is `Jugado` or `Adjudicado` and whose version is ≥ 1, ordered by match id. |
 
 ### 3.8 Architecture
