@@ -7,8 +7,10 @@ using GoalFlow.Tests.Isolation;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -124,14 +126,55 @@ public class LimiteDeFrecuenciaTests
 
     [Theory]
     [MemberData(nameof(LimitesInvalidos))]
-    public void T12_un_limite_invalido_detiene_el_arranque(string clave, string valor)
+    public async Task T12_un_limite_invalido_detiene_el_arranque(string clave, string valor)
     {
-        using var fabrica = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
-            b.UseSetting($"LimiteDeFrecuencia:{clave}", valor));
+        // Spec 010 C-22: sin WebApplicationFactory. Esa fábrica ejecuta el Program real, cuyo app.Run() dispone el host al fallar la
+        // validación mientras la fábrica resuelve servicios en otro hilo: la carrera da ObjectDisposedException en lugar del error.
+        // Un host genérico en un solo hilo, con la misma extensión de producción y solo esta clave, no tiene esa carrera.
+        var builder = new HostApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { [$"LimiteDeFrecuencia:{clave}"] = valor });
+        builder.Services.AddGoalFlowLimiteDeFrecuencia();
+        using var host = builder.Build();
 
-        var error = Assert.ThrowsAny<Exception>(() => fabrica.CreateClient());
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => host.StartAsync());
 
+        Assert.IsNotType<ObjectDisposedException>(error); // nunca es un resultado válido
         Assert.Contains($"LimiteDeFrecuencia:{clave}", error.ToString());
+        if (valor == "no-es-un-entero")
+        {
+            Assert.IsType<InvalidOperationException>(error); // el error de conversión del enlace de configuración
+            Assert.Contains($"LimiteDeFrecuencia:{clave}", error.Message);
+        }
+        else
+            Assert.IsType<OptionsValidationException>(error);
+    }
+
+    [Fact] // Control positivo de T-12 (a): el mismo montaje con límites válidos arranca y se detiene; los fallos de la Theory son del valor
+    public async Task T12_con_limites_validos_el_mismo_host_arranca()
+    {
+        var builder = new HostApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["LimiteDeFrecuencia:Publica:PorCliente"] = "5",
+            ["LimiteDeFrecuencia:Publica:Global"] = "5",
+            ["LimiteDeFrecuencia:Admin:PorCliente"] = "5",
+            ["LimiteDeFrecuencia:Admin:Global"] = "5",
+        });
+        builder.Services.AddGoalFlowLimiteDeFrecuencia();
+        using var host = builder.Build();
+
+        await host.StartAsync();
+        await host.StopAsync();
+    }
+
+    [Fact] // T-12 (b): la composición real de la API usa la extensión que la Theory valida
+    public async Task T12_la_composicion_de_la_API_registra_el_validador_de_limites()
+    {
+        await using var fabrica = new WebApplicationFactory<Program>(); // configuración válida: arranca sin fallar, no hay carrera
+
+        var validadores = fabrica.Services.GetServices<IValidateOptions<OpcionesDeLimiteDeFrecuencia>>();
+
+        Assert.Contains(validadores, v => v is ValidadorDeLimiteDeFrecuencia);
     }
 
     // ---- T-13 ----
