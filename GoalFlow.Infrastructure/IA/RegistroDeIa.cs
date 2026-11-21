@@ -26,6 +26,9 @@ public static class RegistroDeIa
         services.AddScoped<ILectorDePartidoParaResumen, LectorDePartidoParaResumen>();
         services.AddScoped<IListadoDePartidosConResultado, ListadoDePartidosConResultado>();
 
+        // El detalle público (Spec 011 R-18): solo lee y publica por el selector, sin proveedor. Se registra con la IA apagada.
+        services.AddScoped<ConsultaDeDetalleDePartido>();
+
         services.AddOptions<OpcionesDeIA>().BindConfiguration(OpcionesDeIA.Seccion);
         services.TryAddSingleton(proveedor => proveedor.GetRequiredService<IOptions<OpcionesDeIA>>().Value);
 

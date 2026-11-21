@@ -139,4 +139,7 @@ public sealed class AlmacenDeResumenesConCompuerta(IAlmacenDeResumenes interno, 
         if (n == 1 && control.TrasInsertarElPrimerResumenDelModelo is { } compuerta) await compuerta.Task;
         return insertado;
     }
+
+    public Task<IReadOnlyList<ResumenPartido>> ListarDelPartidoAsync(Guid partidoId, CancellationToken cancellationToken) =>
+        interno.ListarDelPartidoAsync(partidoId, cancellationToken);
 }

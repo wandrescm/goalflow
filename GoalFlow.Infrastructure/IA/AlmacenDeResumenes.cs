@@ -33,6 +33,13 @@ public sealed class AlmacenDeResumenes(GoalFlowDbContext contexto) : IAlmacenDeR
         }
     }
 
+    /// <summary>Todas las filas del partido en el tenant actual (filtro <c>Tenant</c> y RLS), sin filtrar por estado, huella ni texto (Spec 011 R-15).</summary>
+    public async Task<IReadOnlyList<ResumenPartido>> ListarDelPartidoAsync(Guid partidoId, CancellationToken cancellationToken)
+    {
+        ExigirTransaccion();
+        return await contexto.ResumenesPartido.AsNoTracking().Where(r => r.PartidoId == partidoId).ToListAsync(cancellationToken);
+    }
+
     private void ExigirTransaccion()
     {
         if (contexto.Database.CurrentTransaction is null)

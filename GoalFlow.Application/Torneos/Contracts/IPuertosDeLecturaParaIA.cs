@@ -8,6 +8,12 @@ public interface ILectorDePartidoParaResumen
 {
     /// <summary>Null si el partido no existe en el tenant actual.</summary>
     Task<DatosDePartidoParaResumen?> LeerAsync(Guid partidoId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Lee un partido por su clave natural (Spec 011 R-30; nota aditiva de la Spec 007 R-33): su identificador y los mismos datos que
+    /// <see cref="LeerAsync"/>, construidos por la misma proyección. Null si cualquier parte de la clave no existe en el tenant actual.
+    /// </summary>
+    Task<PartidoPorClave?> LeerPorClaveAsync(ClaveNaturalDePartido clave, CancellationToken cancellationToken);
 }
 
 /// <summary>Un partido con resultado y su versión vigente.</summary>
