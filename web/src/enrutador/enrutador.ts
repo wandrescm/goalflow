@@ -3,6 +3,7 @@ import { createRouter, type RouteLocationNormalized, type RouteLocationRaw, type
 import { useAlmacen } from '../almacen/almacen'
 import { rutaCatalogo, rutaDetalle, rutaGoleadores, rutaPartidos, rutaPosiciones, rutaValla } from '../api/rutas'
 import type { Catalogo } from '../api/tipos'
+import { destinoDelTorneo } from './destinos'
 import VistaDetalle from '../vistas/VistaDetalle.vue'
 import VistaGoleadores from '../vistas/VistaGoleadores.vue'
 import VistaInicio from '../vistas/VistaInicio.vue'
@@ -71,15 +72,7 @@ export function crearEnrutador(historial: RouterHistory, pinia: Pinia): Router {
           // Un error del catálogo no redirige ni reintenta: la vista del torneo muestra su estado y un botón manual (R-40).
           if (!catalogo) return true
 
-          const torneo = catalogo.torneos.find((t) => t.codigo === texto(hacia.params.codigo))
-          const menor = torneo?.fases.reduce<number | undefined>((m, f) => (m === undefined || f.orden < m ? f.orden : m), undefined)
-          if (menor === undefined) return noEncontrado(hacia)
-
-          return {
-            name: 'partidos',
-            params: { slug: hacia.params.slug, codigo: hacia.params.codigo, orden: String(menor) },
-            replace: true,
-          }
+          return destinoDelTorneo(catalogo, texto(hacia.params.slug), texto(hacia.params.codigo)) ?? noEncontrado(hacia)
         },
       },
       { path: '/:slug/torneos/:codigo/fases/:orden([1-9]\\d*)/partidos', name: 'partidos', component: VistaPartidos },

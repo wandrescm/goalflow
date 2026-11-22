@@ -14,8 +14,11 @@ export function fixture<T = unknown>(nombre: string): T {
   return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', `${nombre}.json`), 'utf8')) as T
 }
 
+/** Una respuesta de la API falsa: recibe las opciones de la petición (por ejemplo, su señal) y puede ser asíncrona. */
+export type Manejador = (opciones: RequestInit) => Response | Promise<Response>
+
 /** La tabla de rutas de la API falsa: los fixtures reales de producción. Cada entrada crea una Response nueva. */
-export function tablaDeLaApiFalsa(): Record<string, () => Response> {
+export function tablaDeLaApiFalsa(): Record<string, Manejador> {
   return {
     [CATALOGO]: () => respuesta(200, fixture('S011-01')),
     [PARTIDOS]: () => respuesta(200, fixture('S011-02')),
@@ -31,11 +34,11 @@ export function tablaDeLaApiFalsa(): Record<string, () => Response> {
 }
 
 /** Instala un fetch que responde con la API falsa y cuenta las llamadas; lo que no está en la tabla da 404. */
-export function instalarApiFalsa(cambios: Record<string, () => Response> = {}) {
-  const tabla = { ...tablaDeLaApiFalsa(), ...cambios }
-  const instalado = instalarFetch((url) => {
+export function instalarApiFalsa(cambios: Record<string, Manejador> = {}) {
+  const tabla: Record<string, Manejador> = { ...tablaDeLaApiFalsa(), ...cambios }
+  const instalado = instalarFetch((url, opciones) => {
     const ruta = url.slice(URL_BASE.length)
-    return tabla[ruta]?.() ?? respuesta(404)
+    return tabla[ruta]?.(opciones) ?? respuesta(404)
   })
   return { ...instalado, rutasLlamadas: () => instalado.llamadas.map((l) => l.url.slice(URL_BASE.length)) }
 }
