@@ -1,6 +1,6 @@
 # ADR-09: Frontend hosting and build
 
-- **Status:** Accepted
+- **Status:** Accepted; §2 (deploy) and R-03 amended on 2026-11-21 by Spec 011 (K-1: the frontend deploys only after the backend tests too)
 - **Date:** 2026-10-28
 - **Related:** ADR-05 (backend hosting), ADR-03 (architecture)
 
@@ -20,7 +20,7 @@ The SPA has no server-side logic at the edge: all business logic lives in the AP
 - The frontend is deployed as an **assets-only Cloudflare Worker** (Workers Static Assets, no Worker script), served from a `workers.dev` subdomain until a custom domain exists.
 - SPA routing uses the assets setting `not_found_handling: "single-page-application"`, so deep links (for example `/standings`) return `index.html`.
 - Build: `npm ci`, `npm run test` (Vitest) and `npm run build` (Vite). Output: `dist/`.
-- Deploy: a GitHub Actions job on pushes to `main`, after the frontend build and tests pass, runs `wrangler deploy`. The Cloudflare API token and account ID are repository secrets.
+- Deploy: a GitHub Actions job on pushes to `main`, after the backend tests (`build-test`) and the frontend build and tests (`frontend`) pass, runs `wrangler deploy` on the build that passed. The Cloudflare API token and account ID are repository secrets, exposed only to the deploy step. *(Amended by Spec 011 K-1.)*
 - The API base URL is injected at build time through `VITE_API_BASE_URL`. No secret is ever embedded in the bundle: anything in it is public.
 - `CLAUDE.md` changes "Cloudflare Pages" to "Cloudflare Workers (Static Assets)" in the same PR that adopts this ADR.
 
@@ -28,7 +28,7 @@ The SPA has no server-side logic at the edge: all business logic lives in the AP
 
 - **R-01** The frontend shall be served as static assets by a Cloudflare Worker without a Worker script.
 - **R-02** When a path that matches no file is requested, the host shall return `index.html`.
-- **R-03** When a commit reaches `main` and the frontend build and tests pass, CI shall deploy the frontend.
+- **R-03** When a commit reaches `main` and both the backend tests (`build-test`) and the frontend build and tests (`frontend`) pass, CI shall deploy the frontend. *(Amended by Spec 011 K-1, R-51.)*
 - **R-04** If the frontend build or tests fail, CI shall not deploy.
 - **R-05** The production bundle shall contain no secrets; the only environment value it embeds is the public API base URL (and other values that are public by design).
 - **R-06** The frontend's production origin shall be the one the API allows in CORS (ADR-05, R-12).
