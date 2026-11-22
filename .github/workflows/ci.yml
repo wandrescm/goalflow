@@ -71,3 +71,66 @@ jobs:
             exit 1
           fi
           curl --fail --silent --show-error -X POST "${RENDER_DEPLOY_HOOK_URL}&ref=${{ github.sha }}" > /dev/null
+
+  # Spec 011 R-50: the frontend job runs on every push and pull request. VITE_API_BASE_URL is a repository variable (public by design,
+  # C-24); without it the production build fails on purpose (R-47). `npm audit` gates the runtime dependencies only.
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run lint
+      - run: npm run test
+      - name: Build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+
+  # Spec 011 R-51: only on pushes to main, after the backend tests and the frontend job pass. It deploys the tested build (the artifact
+  # of `frontend`) without rebuilding it. The Cloudflare secrets exist only in the deploy step, never at job level, so `npm ci` runs without them.
+  deploy-frontend:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build-test, frontend]
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: deploy-frontend
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist
+      - name: Deploy the tested build to Cloudflare Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Cloudflare secrets are not configured."
+            exit 1
+          fi
+          npx wrangler deploy
