@@ -17,7 +17,8 @@ async function mensajesDe(archivo: string) {
 
 const comoError = (ruleId: string) => (m: { ruleId: string | null; severity: number }) => m.ruleId === ruleId && m.severity === 2
 
-describe('T-23 (lint): los sumideros HTML y el almacenamiento están prohibidos como error (R-46, R-47)', () => {
+// La primera instancia de ESLint carga la configuración y el analizador de TypeScript: en frío tarda más que los 5 s por defecto.
+describe('T-23 (lint): los sumideros HTML y el almacenamiento están prohibidos como error (R-46, R-47)', { timeout: 60_000 }, () => {
   it('el canario con v-html reporta vue/no-v-html como error', async () => {
     expect((await mensajesDe('test/canarios/ConVHtml.vue')).some(comoError('vue/no-v-html'))).toBe(true)
   })
