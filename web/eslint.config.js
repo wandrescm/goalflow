@@ -35,4 +35,10 @@ export default defineConfigWithVueTs(
       ],
     },
   },
+  {
+    // T-25 (C-27): la prueba que inspecciona el almacenamiento del navegador para fijar que solo el enrutador lo toca. Solo este archivo
+    // deja de aplicar las reglas de almacenamiento y cookies; las de HTML siguen activas.
+    files: ['test/arquitectura/almacenamiento.test.ts'],
+    rules: { 'no-restricted-globals': 'off', 'no-restricted-properties': 'off' },
+  },
 )
