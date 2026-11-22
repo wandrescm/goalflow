@@ -21,7 +21,7 @@ Cada tarea llega como un **handoff** con: contexto y stack, criterios de aceptac
 ## Stack
 
 - C# y **.NET 10 (LTS)**, ASP.NET Core Web API, EF Core con Npgsql, xUnit.
-- Frontend (más adelante): Vue.js con Composition API, TypeScript, Vite y Pinia; pruebas con Vitest.
+- Frontend (`web/`, Spec 011): Vue.js con Composition API, TypeScript, Vite, Pinia y vue-router; pruebas con Vitest.
 - Base de datos: PostgreSQL en Supabase. Autenticación: Supabase Auth (JWT).
 - Hosting: Render (backend) y Cloudflare Workers con Static Assets (frontend). CI/CD con GitHub Actions.
 
