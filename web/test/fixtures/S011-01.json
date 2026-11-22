@@ -1,0 +1,1 @@
+{"liga":{"slug":"liga-humo","nombre":"Liga de humo"},"torneos":[{"codigo":"HUMO-T1","nombre":"Torneo F6","fases":[{"orden":1,"tipo":"TodosContraTodos","vueltas":1}]},{"codigo":"HUMO-T2","nombre":"Torneo sin reglas","fases":[{"orden":1,"tipo":"TodosContraTodos","vueltas":1}]}]}
